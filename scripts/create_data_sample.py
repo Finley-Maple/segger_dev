@@ -3,7 +3,8 @@ from segger.training.train import LitSegger
 from segger.training.segger_data_module import SeggerDataModule
 from segger.prediction.predict import predict, load_model
 from lightning.pytorch.loggers import CSVLogger
-from pytorch_lightning import Trainer
+from lightning.pytorch import Trainer
+#from pytorch_lightning import Trainer
 from pathlib import Path
 from lightning.pytorch.plugins.environments import LightningEnvironment
 from matplotlib import pyplot as plt
