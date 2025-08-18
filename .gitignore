@@ -110,6 +110,27 @@ ipython_config.py
 .pdm.toml
 .pdm-python
 .pdm-build/
+.pre-commit-config.yaml
+.prettierignore
+.python_version
+.bash_history
+.bash_logout
+.gitconfig
+.bash_profile
+.bashrc
+.emacs
+.lesshst
+.zcompdump
+.zshrc
+check_quota.sh
+cleanup.sh
+.cache/
+.config
+.cursor-server/
+.ipython/
+.ssh/
+.local/
+fySegger/
 
 # PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
 __pypackages__/
