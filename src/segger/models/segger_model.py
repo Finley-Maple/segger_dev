@@ -1,10 +1,16 @@
 import torch
 from torch_geometric.nn import GATv2Conv, Linear
-from torch.nn import Embedding
-from torch import Tensor
-from typing import Union
+from torch import Tensor 
+from typing import Union, Dict, Tuple, Optional
+from torch.nn import (
+    Embedding,
+    ModuleList,
+    Module,
+    functional as F
+)
 
 # from torch_sparse import SparseTensor
+
 
 
 class Segger(torch.nn.Module):

@@ -6,7 +6,10 @@ import pandas as pd
 import math
 import numpy as np
 from segger.data.parquet._utils import get_polygons_from_xy
-
+import anndata as ad
+from typing import Dict, List, Tuple
+from itertools import combinations
+from segger.data.parquet._utils import find_markers, find_mutually_exclusive_genes
 """
 This script preprocesses Xenium spatial transcriptomics data for SEGGER cell segmentation model.
 
@@ -39,67 +42,68 @@ Usage:
 
 
 XENIUM_DATA_DIR = Path(
-    "/omics/odcf/analysis/OE0606_projects_temp/oncolgy_data_exchange/analysis_domenico/project_24/output-XETG00423__0053177__mng_04_TMA__20250306__170821"
+    "/dkfz/cluster/gpu/data/OE0606/elihei/segger_experiments/data_raw/breast_cancer/Xenium_FFPE_Human_Breast_Cancer_Rep1/outs"
 )
-SEGGER_DATA_DIR = Path("data_tidy/pyg_datasets/MNG_0053177")
+SEGGER_DATA_DIR = Path("data_tidy/pyg_datasets/xe_bc_rep1_loss_emb2")
 SCRNASEQ_FILE = Path(
-    "/omics/groups/OE0606/internal/mimmo/Xenium/notebooks/data/scData/bh/bh_mng_scdata_20250306.h5ad"
+    "/omics/groups/OE0606/internal/tangy/tasks/schier/data/atals_filtered.h5ad"
 )
-CELLTYPE_COLUMN = "annot_v1"
-
+CELLTYPE_COLUMN = "celltype_minor"
+scrnaseq = sc.read(SCRNASEQ_FILE)
+sc.pp.subsample(scrnaseq, 0.25)
+scrnaseq.var_names_make_unique()
+sc.pp.log1p(scrnaseq)
+sc.pp.normalize_total(scrnaseq)
 # Calculate gene-celltype embeddings from reference data
-# gene_celltype_abundance_embedding = calculate_gene_celltype_abundance_embedding(
-#     sc.read(SCRNASEQ_FILE),
-#     CELLTYPE_COLUMN
-# )
+gene_celltype_abundance_embedding = calculate_gene_celltype_abundance_embedding(
+    scrnaseq,
+    CELLTYPE_COLUMN
+)
+
+
+
+# markers = find_markers(scrnaseq, cell_type_column="celltype_minor", pos_percentile=20, neg_percentile=20, percentage=50)
+
+
+    
 
 # Initialize spatial transcriptomics sample object
 sample = STSampleParquet(
     base_dir=XENIUM_DATA_DIR,
-    n_workers=4,
+    n_workers=10,
     sample_type="xenium",
-    # weights=gene_celltype_abundance_embedding
+    # scale_factor=0.8,
+    weights=gene_celltype_abundance_embedding
 )
 
-# Load and filter data
-transcripts = pd.read_parquet(
-    XENIUM_DATA_DIR / "transcripts.parquet", filters=[[("overlaps_nucleus", "=", 1)]]
+
+
+
+genes = list(set(scrnaseq.var_names) & set(sample.transcripts_metadata['feature_names']))
+markers = find_markers(scrnaseq[:,genes], cell_type_column="celltype_minor", pos_percentile=90, neg_percentile=20, percentage=20)
+# Find mutually exclusive genes based on scRNAseq data
+exclusive_gene_pairs = find_mutually_exclusive_genes(
+    adata=scrnaseq,
+    markers=markers,
+    cell_type_column="celltype_minor"
 )
-boundaries = pd.read_parquet(XENIUM_DATA_DIR / "nucleus_boundaries.parquet")
 
-# Calculate optimal neighborhood parameters
-transcript_counts = transcripts.groupby("cell_id").size()
-nucleus_polygons = get_polygons_from_xy(boundaries, "vertex_x", "vertex_y", "cell_id")
-transcript_densities = (
-    nucleus_polygons[transcript_counts.index].area / transcript_counts
-)
-nucleus_diameter = nucleus_polygons.minimum_bounding_radius().median() * 2
 
-# Set neighborhood parameters
-dist_tx = nucleus_diameter / 4  # Search radius = 1/4 nucleus diameter
-k_tx = math.ceil(
-    np.quantile(dist_tx**2 * np.pi * transcript_densities, 0.9)
-)  # Sample size based on 90th percentile density
-
-print(f"Calculated parameters: k_tx={k_tx}, dist_tx={dist_tx:.2f}")
-
-# Save processed dataset for SEGGER
-# Parameters:
-# - k_bd/dist_bd: Control nucleus boundary point connections
-# - k_tx/dist_tx: Control transcript neighborhood connections
-# - tile_width/height: Size of spatial tiles for processing
-# - neg_sampling_ratio: Ratio of negative to positive samples
-# - val_prob: Fraction of data for validation
 sample.save(
     data_dir=SEGGER_DATA_DIR,
     k_bd=3,  # Number of boundary points to connect
     dist_bd=15,  # Maximum distance for boundary connections
-    k_tx=k_tx,  # Use calculated optimal transcript neighbors
-    dist_tx=dist_tx,  # Use calculated optimal search radius
-    tile_width=100,  # Tile size for processing
-    tile_height=100,
-    neg_sampling_ratio=5.0,  # 5:1 negative:positive samples
+    k_tx=20,  # Use calculated optimal transcript neighbors
+    dist_tx=5,  # Use calculated optimal search radius
+    k_tx_ex=20,  # Use calculated optimal transcript neighbors
+    dist_tx_ex=20,  # Use calculated optimal search radius
+    tile_size=10_000,  # Tile size for processing
+    # tile_height=100,
+    neg_sampling_ratio=10.0,  # 5:1 negative:positive samples
     frac=1.0,  # Use all data
     val_prob=0.3,  # 30% validation set
     test_prob=0,  # No test set
+    # k_tx_ex=100,  # Use calculated optimal transcript neighbors
+    # dist_tx_ex=20,  # Use calculated optimal search radius
+    mutually_exclusive_genes=exclusive_gene_pairs
 )

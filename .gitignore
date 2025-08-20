@@ -204,3 +204,8 @@ lightning_logs/
 
 # intermediate data
 intermediate_data/
+
+# scripts/*
+.scripts/*
+
+models/*

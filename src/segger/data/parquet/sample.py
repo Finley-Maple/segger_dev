@@ -14,9 +14,11 @@ import logging
 from itertools import compress
 from torch_geometric.data import HeteroData
 from torch_geometric.transforms import RandomLinkSplit
+from pqdm.threads import pqdm
 import torch
 import random
 from segger.data.parquet.transcript_embedding import TranscriptEmbedding
+# import re
 
 
 # TODO: Add documentation for settings
@@ -33,7 +35,7 @@ class STSampleParquet:
         self,
         base_dir: os.PathLike,
         n_workers: Optional[int] = 1,
-        buffer_ratio: Optional[float] = 1.0,
+        scale_factor: Optional[float] = 1.0,
         sample_type: str = None,
         weights: pd.DataFrame = None,
     ):
@@ -50,8 +52,8 @@ class STSampleParquet:
             The sample type of the raw data, e.g., 'xenium' or 'merscope'.
         weights : Optional[pd.DataFrame], default None
             DataFrame containing weights for transcript embedding.
-        buffer_ratio : Optional[float], default None
-            The buffer ratio to be used for expanding the boundary extents
+        scale_factor : Optional[float], default None
+            The scale factor to be used for expanding the boundary extents
             during spatial queries. If not provided, the default from settings
             will be used.
 
@@ -69,15 +71,15 @@ class STSampleParquet:
         boundaries_fn = self.settings.boundaries.filename
         self._boundaries_filepath = self._base_dir / boundaries_fn
         self.n_workers = n_workers
-        self.settings.boundaries.buffer_ratio = 1
+        self.settings.boundaries.scale_factor = 1
         nuclear_column = getattr(self.settings.transcripts, "nuclear_column", None)
-        if nuclear_column is None or self.settings.boundaries.buffer_ratio != 1.0:
+        if nuclear_column is None or self.settings.boundaries.scale_factor != 1.0:
             print(
                 "Boundary-transcript overlap information has not been pre-computed. It will be calculated during tile generation."
             )
-        # Set buffer ratio if provided
-        if buffer_ratio != 1.0:
-            self.settings.boundaries.buffer_ratio = buffer_ratio
+        # Set scale factor if provided
+        if scale_factor != 1.0:
+            self.settings.boundaries.scale_factor = scale_factor
 
         # Ensure transcript IDs exist
         utils.ensure_transcript_ids(
@@ -203,7 +205,8 @@ class STSampleParquet:
                 missing_genes = list(set(names_str) - set(self._emb_genes))
                 logging.warning(f"Number of missing genes: {len(missing_genes)}")
                 self.settings.transcripts.filter_substrings.extend(missing_genes)
-            pattern = "|".join(self.settings.transcripts.filter_substrings)
+            # pattern = "|".join(self.settings.transcripts.filter_substrings)
+            pattern = "|".join(f"^{s}" for s in self.settings.transcripts.filter_substrings)
             mask = pc.invert(pc.match_substring_regex(names, pattern))
             filtered_names = pc.filter(names, mask).to_pylist()
             metadata["feature_names"] = [
@@ -363,6 +366,8 @@ class STSampleParquet:
         dist_bd: float = 15.0,
         k_tx: int = 3,
         dist_tx: float = 5.0,
+        k_tx_ex: int = 100,
+        dist_tx_ex: float = 20,
         tile_size: Optional[int] = None,
         tile_width: Optional[float] = None,
         tile_height: Optional[float] = None,
@@ -370,6 +375,7 @@ class STSampleParquet:
         frac: float = 1.0,
         val_prob: float = 0.1,
         test_prob: float = 0.2,
+        mutually_exclusive_genes: Optional[List] = None,
     ):
         """
         Saves the tiles of the sample as PyTorch geometric datasets. See
@@ -452,7 +458,10 @@ class STSampleParquet:
                     dist_bd=dist_bd,
                     k_tx=k_tx,
                     dist_tx=dist_tx,
+                    k_tx_ex=k_tx_ex,
+                    dist_tx_ex=dist_tx_ex,
                     neg_sampling_ratio=neg_sampling_ratio,
+                    mutually_exclusive_genes = mutually_exclusive_genes
                 )
                 if pyg_data is not None:
                     if pyg_data["tx", "belongs", "bd"].edge_index.numel() == 0:
@@ -475,6 +484,8 @@ class STSampleParquet:
         dist_bd: float = 15.0,
         k_tx: int = 3,
         dist_tx: float = 5.0,
+        k_tx_ex: int = 100,
+        dist_tx_ex: float = 20,
         tile_width: Optional[float] = None,
         tile_height: Optional[float] = None,
         neg_sampling_ratio: float = 5.0,
@@ -543,6 +554,8 @@ class STSampleParquet:
                     dist_bd=dist_bd,
                     k_tx=k_tx,
                     dist_tx=dist_tx,
+                    k_tx_ex=k_tx_ex,
+                    dist_tx_ex=dist_tx_ex,
                     neg_sampling_ratio=neg_sampling_ratio,
                 )
 
@@ -1161,31 +1174,36 @@ class STTile:
         of the code.
         """
         # Get polygons from coordinates
-        polygons = utils.get_polygons_from_xy(
-            self.boundaries,
-            x=self.settings.boundaries.x,
-            y=self.settings.boundaries.y,
-            label=self.settings.boundaries.label,
-            buffer_ratio=self.settings.boundaries.buffer_ratio,
-        )
+        # Use getattr to check for the geometry column
+        geometry_column = getattr(self.settings.boundaries, 'geometry', None)
+        if geometry_column and geometry_column in self.boundaries.columns:
+            polygons = self.boundaries[geometry_column]
+        else:
+            polygons = self.boundaries['geometry']  # Assign None if the geometry column does not exist
         # Geometric properties of polygons
         props = self.get_polygon_props(polygons)
         props = torch.as_tensor(props.values).float()
 
         return props
+    
+    def canonical_edges(edge_index):
+        return torch.sort(edge_index, dim=0)[0]
 
     def to_pyg_dataset(
         self,
         # train: bool,
-        neg_sampling_ratio: float = 5,
+        neg_sampling_ratio: float = 10,
         k_bd: int = 3,
         dist_bd: float = 15,
         k_tx: int = 3,
         dist_tx: float = 5,
+        k_tx_ex: int = 100,
+        dist_tx_ex: float = 20,
         area: bool = True,
         convexity: bool = True,
         elongation: bool = True,
         circularity: bool = True,
+        mutually_exclusive_genes: Optional[List] = None,
     ) -> HeteroData:
         """
         Converts the sample data to a PyG HeteroData object.
@@ -1212,6 +1230,8 @@ class STTile:
         )
         pyg_data["tx"].x = self.get_transcript_props()
 
+
+
         # Set up Transcript-Transcript neighbor edges
         nbrs_edge_idx = self.get_kdtree_edge_index(
             self.transcripts[self.settings.transcripts.xyz],
@@ -1226,14 +1246,67 @@ class STTile:
 
         pyg_data["tx", "neighbors", "tx"].edge_index = nbrs_edge_idx
 
+
+        if mutually_exclusive_genes is not None:
+            # Get potential repulsive edges (k-nearest neighbors within distance)
+            # --- Step 1: Get repulsive edges (mutually exclusive genes) ---
+            repels_edge_idx = self.get_kdtree_edge_index(
+                self.transcripts[self.settings.transcripts.xyz],
+                self.transcripts[self.settings.transcripts.xyz],
+                k=k_tx_ex,
+                max_distance=dist_tx_ex,
+            )
+            gene_ids = self.transcripts[self.settings.transcripts.label].tolist()
+            
+            # Filter repels_edge_idx to only keep mutually exclusive gene pairs
+            src_genes = [gene_ids[i] for i in repels_edge_idx[0].tolist()]
+            dst_genes = [gene_ids[i] for i in repels_edge_idx[1].tolist()]
+            mask = [
+                tuple(sorted((a, b))) in mutually_exclusive_genes if a != b else False
+                for a, b in zip(src_genes, dst_genes)
+            ]
+            repels_edge_idx = repels_edge_idx[:, torch.tensor(mask)]
+            
+            # --- Step 2: Get attractive edges (same gene, at least one node in repels) ---
+            # Nodes involved in repels (for filtering nbrs_edge_idx)
+            repels_nodes = torch.cat([repels_edge_idx[0], repels_edge_idx[1]]).unique()
+            
+            # Filter nbrs_edge_idx: keep edges where (1) same gene AND (2) at least one node in repels
+            attractive_mask = torch.zeros(nbrs_edge_idx.shape[1], dtype=torch.bool)
+            for i, (src, dst) in enumerate(nbrs_edge_idx.t().tolist()):
+                if (src != dst) and (gene_ids[src] == gene_ids[dst]) and (src in repels_nodes or dst in repels_nodes):
+                    attractive_mask[i] = True
+            attractive_edge_idx = nbrs_edge_idx[:, attractive_mask]
+            
+            # --- Step 3: Combine repels (label=0) and attractive (label=1) edges ---
+            edge_label_index = torch.cat([repels_edge_idx, attractive_edge_idx], dim=1)
+            edge_label = torch.cat([
+                torch.zeros(repels_edge_idx.shape[1], dtype=torch.long),  # 0 for repels
+                torch.ones(attractive_edge_idx.shape[1], dtype=torch.long)  # 1 for attracts
+            ])
+            
+            # --- Step 4: Store in PyG data object ---
+            pyg_data["tx", "attracts", "tx"].edge_label_index = edge_label_index
+            pyg_data["tx", "attracts", "tx"].edge_label = edge_label
+
+
         # Set up Boundary nodes
-        polygons = utils.get_polygons_from_xy(
-            self.boundaries,
-            self.settings.boundaries.x,
-            self.settings.boundaries.y,
-            self.settings.boundaries.label,
-            self.settings.boundaries.buffer_ratio,
-        )
+        # Check if boundaries have geometries
+        geometry_column = getattr(self.settings.boundaries, 'geometry', None)
+        if geometry_column and geometry_column in self.boundaries.columns:
+            polygons = gpd.GeoSeries(self.boundaries[geometry_column], index=self.boundaries.index)
+        else:
+            # Fallback: compute polygons
+            polygons = utils.get_polygons_from_xy(
+                self.boundaries,
+                x=self.settings.boundaries.x,
+                y=self.settings.boundaries.y,
+                label=self.settings.boundaries.label,
+                scale_factor=self.settings.boundaries.scale_factor,
+            )
+
+        # Ensure self.boundaries is a GeoDataFrame with correct geometry
+        self.boundaries = gpd.GeoDataFrame(self.boundaries.copy(), geometry=polygons)
         centroids = polygons.centroid.get_coordinates()
         pyg_data["bd"].id = polygons.index.to_numpy()
         pyg_data["bd"].pos = torch.tensor(centroids.values, dtype=torch.float32)
@@ -1270,7 +1343,7 @@ class STTile:
         nuclear_column = getattr(self.settings.transcripts, "nuclear_column", None)
         nuclear_value = getattr(self.settings.transcripts, "nuclear_value", None)
 
-        if nuclear_column is None or self.settings.boundaries.buffer_ratio != 1.0:
+        if nuclear_column is None or self.settings.boundaries.scale_factor != 1.0:
             is_nuclear = utils.compute_nuclear_transcripts(
                 polygons=polygons,
                 transcripts=self.transcripts,
@@ -1293,7 +1366,7 @@ class STTile:
         if blng_edge_idx.numel() == 0:
             return pyg_data
 
-        # If there are tx-bd edges, add negative edges for training
+                # If there are tx-bd edges, add negative edges for training
         transform = RandomLinkSplit(
             num_val=0,
             num_test=0,
