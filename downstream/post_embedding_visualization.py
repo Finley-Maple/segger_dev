@@ -21,6 +21,7 @@ from torch_geometric.nn import to_hetero
 from segger.training.train import LitSegger
 from visualization.embedding_visualization import (
     visualize_embeddings_from_model,
+    visualize_spatial_from_dataloader,
     EmbeddingVisualizationConfig,
     EmbeddingExtractor,
     EmbeddingVisualizer
@@ -157,90 +158,189 @@ def post_training_visualization():
         traceback.print_exc()
 
 
-
-# def example_custom_embedding_analysis():
-#     """
-#     Example of custom embedding analysis using the low-level API.
-#     """
-#     print("=== Custom Embedding Analysis Example ===")
+def spatial_visualization_by_batch():
+    """
+    Example of how to visualize spatial distribution of transcripts and boundaries.
+    Creates two combined plots: one for all transcripts (tx) and one for all boundaries (bd),
+    with points colored by batch index.
+    """
+    print("=== Spatial Visualization by Batch Example ===")
     
-#     dataset = 'pancreas'
-#     model_type = 'no_seq'
+    # Configuration
+    dataset = 'pancreas'  # or 'colon'
+    model_type = 'no_seq'
     
-#     # Set up paths (same as previous examples)
-#     SEGGER_DATA_DIR = DATA_DIR / 'segger_data' / f'segger_{dataset}_{model_type}'
+    # Set up paths
+    XENIUM_DATA_DIR = DATA_DIR / 'xenium_data' / f'xenium_{dataset}'
+    SEGGER_DATA_DIR = DATA_DIR / 'segger_data' / f'segger_{dataset}_{model_type}'
     
-#     # Load data
-#     dm = SeggerDataModule(data_dir=SEGGER_DATA_DIR, batch_size=3, num_workers=2)
-#     dm.setup()
+    # Load data module
+    dm = SeggerDataModule(
+        data_dir=SEGGER_DATA_DIR,
+        batch_size=3,
+        num_workers=2,
+    )
+    dm.setup()
     
-#     # Create a dummy model for demonstration
-#     model = Segger(num_tx_tokens=500, init_emb=8, hidden_channels=64, out_channels=16, heads=4, num_mid_layers=3)
-#     model = to_hetero(model, (["tx", "bd"], [("tx", "belongs", "bd"), ("tx", "neighbors", "tx")]), aggr="sum")
+    # Load transcripts and metadata
+    transcripts = pd.read_parquet(XENIUM_DATA_DIR / 'transcripts.parquet')
     
-#     # Initialize embedding extractor
-#     extractor = EmbeddingExtractor()
-    
-#     # Extract embeddings from a single batch
-#     batch = dm.train[10]
-#     batch_embeddings = extractor.extract_batch_embeddings(model, batch)
-    
-#     print(f"Extracted embeddings:")
-#     for node_type, embeddings in batch_embeddings.items():
-#         print(f"  {node_type}: shape {embeddings.shape}")
-    
-#     # Create custom visualization config
-#     config = EmbeddingVisualizationConfig(
-#         method='pca',  # Use PCA for speed
-#         n_components=2,
-#         figsize=(8, 6),
-#         point_size=5.0,
-#         alpha=0.8
-#     )
-    
-#     # Initialize visualizer
-#     visualizer = EmbeddingVisualizer(config)
-    
-#     # Create mock metadata for demonstration
-#     mock_embeddings_data = {}
-#     for node_type, embeddings in batch_embeddings.items():
-#         n_nodes = len(embeddings)
-#         if node_type == 'tx':
-#             metadata = pd.DataFrame({
-#                 'node_id': range(n_nodes),
-#                 'node_type': 'tx',
-#                 'batch_idx': 0,
-#                 'within_batch_idx': range(n_nodes),
-#                 'gene_name': [f'Gene_{i}' for i in range(n_nodes)]
-#             })
-#         else:
-#             metadata = pd.DataFrame({
-#                 'node_id': range(n_nodes),
-#                 'node_type': 'bd',
-#                 'batch_idx': 0,
-#                 'within_batch_idx': range(n_nodes),
-#                 'cell_type': ['CellType_A' if i % 2 == 0 else 'CellType_B' for i in range(n_nodes)]
-#             })
+    gene_types_dict = None
+    cell_types_dict = None
+    if dataset == 'pancreas':
+        # Load gene and cell type information
+        gene_types = pd.read_excel(XENIUM_DATA_DIR / 'gene_groups_modified.xlsx')
+        gene_types_dict = dict(zip(gene_types['gene'], gene_types['group']))
         
-#         mock_embeddings_data[node_type] = {
-#             'embeddings': embeddings,
-#             'metadata': metadata
-#         }
+        cell_types = pd.read_csv(XENIUM_DATA_DIR / 'cell_groups.csv')
+        cell_types_dict = dict(zip(cell_types['cell_id'], cell_types['group']))
+        
+        # Merge Endocrine 1 and Endocrine 2 into Endocrine
+        # Merge Tumor Cells and CFTR- Tumor Cells into Tumor Cells
+        for k, v in cell_types_dict.items():
+            if v in ["Endocrine 1", "Endocrine 2"]:
+                cell_types_dict[k] = "Endocrine"
+            elif v in ["Tumor Cells", "CFTR- Tumor Cells"]:
+                cell_types_dict[k] = "Tumor Cells"
     
-#     # Generate visualizations
-#     save_dir = Path('./custom_embedding_analysis')
-#     plots = visualizer.visualize_embeddings(
-#         embeddings_data=mock_embeddings_data,
-#         save_dir=save_dir
-#     )
+    # Create visualization config
+    config = EmbeddingVisualizationConfig(
+        figsize=(10, 8),
+        spatial_alpha=0.7,
+        spatial_tx_size=8.0,
+        spatial_bd_size=15.0,
+        spatial_max_points_per_gene_type=500,  # Subsample for better visualization
+        save_format='png',
+        dpi=300
+    )
     
-#     print(f"\nCustom analysis complete! Generated plots:")
-#     for plot_name, plot_path in plots.items():
-#         print(f"  - {plot_name}: {plot_path}")
+    # Set up save directory
+    save_dir = Path('./spatial_visualization_results') / dataset / model_type
+    save_dir.mkdir(parents=True, exist_ok=True)
+    
+    print(f"Generating spatial visualizations...")
+    print(f"Dataset: {dataset}")
+    print(f"Model type: {model_type}")
+    print(f"Save directory: {save_dir}")
+    
+    # Generate visualizations
+    try:
+        plots = visualize_spatial_from_dataloader(
+            dataloader=dm.train,
+            save_dir=save_dir,
+            transcripts_df=transcripts,
+            gene_types_dict=gene_types_dict,
+            cell_types_dict=cell_types_dict,
+            max_batches=80,
+            max_batches_to_plot=80,
+            config=config,
+            combined_plot=True  # Create combined plots colored by batch index
+        )
+        
+        print(f"\nSpatial visualization complete! Generated plots:")
+        for plot_name, plot_path in plots.items():
+            print(f"  - {plot_name}: {plot_path}")
+            
+    except Exception as e:
+        print(f"Error during spatial visualization: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+
+def spatial_visualization_separate_batches():
+    """
+    Example of how to visualize spatial distribution with separate plots for each batch.
+    Creates individual plots for each batch showing transcripts and boundaries.
+    """
+    print("=== Spatial Visualization Separate Batches Example ===")
+    
+    # Configuration
+    dataset = 'pancreas'  # or 'colon'
+    model_type = 'no_seq'
+    
+    # Set up paths
+    XENIUM_DATA_DIR = DATA_DIR / 'xenium_data' / f'xenium_{dataset}'
+    SEGGER_DATA_DIR = DATA_DIR / 'segger_data' / f'segger_{dataset}_{model_type}'
+    
+    # Load data module
+    dm = SeggerDataModule(
+        data_dir=SEGGER_DATA_DIR,
+        batch_size=3,
+        num_workers=2,
+    )
+    dm.setup()
+    
+    # Load transcripts and metadata
+    transcripts = pd.read_parquet(XENIUM_DATA_DIR / 'transcripts.parquet')
+    
+    gene_types_dict = None
+    cell_types_dict = None
+    if dataset == 'pancreas':
+        # Load gene and cell type information
+        gene_types = pd.read_excel(XENIUM_DATA_DIR / 'gene_groups_modified.xlsx')
+        gene_types_dict = dict(zip(gene_types['gene'], gene_types['group']))
+        
+        cell_types = pd.read_csv(XENIUM_DATA_DIR / 'cell_groups.csv')
+        cell_types_dict = dict(zip(cell_types['cell_id'], cell_types['group']))
+        
+        # Merge Endocrine 1 and Endocrine 2 into Endocrine
+        # Merge Tumor Cells and CFTR- Tumor Cells into Tumor Cells
+        for k, v in cell_types_dict.items():
+            if v in ["Endocrine 1", "Endocrine 2"]:
+                cell_types_dict[k] = "Endocrine"
+            elif v in ["Tumor Cells", "CFTR- Tumor Cells"]:
+                cell_types_dict[k] = "Tumor Cells"
+    
+    # Create visualization config
+    config = EmbeddingVisualizationConfig(
+        figsize=(10, 8),
+        spatial_alpha=0.7,
+        spatial_tx_size=8.0,
+        spatial_bd_size=15.0,
+        spatial_max_points_per_gene_type=500,
+        save_format='png',
+        dpi=300
+    )
+    
+    # Set up save directory
+    save_dir = Path('./spatial_visualization_results') / dataset / model_type / 'separate_batches'
+    save_dir.mkdir(parents=True, exist_ok=True)
+    
+    print(f"Generating separate spatial visualizations...")
+    print(f"Dataset: {dataset}")
+    print(f"Model type: {model_type}")
+    print(f"Save directory: {save_dir}")
+    
+    # Generate separate visualizations
+    try:
+        plots = visualize_spatial_from_dataloader(
+            dataloader=dm.train,
+            save_dir=save_dir,
+            transcripts_df=transcripts,
+            gene_types_dict=gene_types_dict,
+            cell_types_dict=cell_types_dict,
+            max_batches=5,  # Process fewer batches for separate plots
+            max_batches_to_plot=5,
+            config=config,
+            combined_plot=False  # Create separate plots for each batch
+        )
+        
+        print(f"\nSeparate spatial visualization complete! Generated plots:")
+        for plot_name, plot_path in plots.items():
+            print(f"  - {plot_name}: {plot_path}")
+            
+    except Exception as e:
+        print(f"Error during separate spatial visualization: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
 
 def main():
+    # Run embedding visualization
     post_training_visualization()
+    
+    # Run combined spatial visualization (all batches in 2 plots colored by batch)
+    # spatial_visualization_by_batch()
 
 
 if __name__ == '__main__':

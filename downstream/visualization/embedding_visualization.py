@@ -57,6 +57,12 @@ class EmbeddingVisualizationConfig:
     # Sampling for large datasets
     max_points_per_type: int = 10000
     subsample_method: str = 'random'  # 'random', 'balanced'
+    
+    # Spatial visualization parameters
+    spatial_max_points_per_gene_type: int = 1000  # Max points per gene type for spatial plots
+    spatial_alpha: float = 0.6
+    spatial_tx_size: float = 2.0
+    spatial_bd_size: float = 5.0
 
 
 class EmbeddingExtractor:
@@ -99,6 +105,189 @@ class EmbeddingExtractor:
                     
         return extracted_embeddings
     
+    def extract_spatial_data_from_batches(self,
+                                        dataloader,
+                                        max_batches: Optional[int] = None,
+                                        gene_names_dict: Optional[Dict] = None,
+                                        cell_types_dict: Optional[Dict] = None,
+                                        transcripts_df: Optional[pd.DataFrame] = None) -> Dict[str, Dict]:
+        """
+        Extract spatial coordinates and metadata from multiple batches.
+        
+        Args:
+            dataloader: DataLoader containing batches
+            max_batches: Maximum number of batches to process
+            gene_names_dict: Mapping from transcript ID to gene name
+            cell_types_dict: Mapping from cell ID to cell type
+            transcripts_df: DataFrame containing transcript information
+            
+        Returns:
+            Dictionary containing spatial coordinates and metadata for visualization
+        """
+        all_tx_positions = []
+        all_bd_positions = []
+        all_tx_metadata = []
+        all_bd_metadata = []
+        
+        # Handle both dataset indexing and dataloader iteration
+        if hasattr(dataloader, '__getitem__'):
+            # It's a dataset, access items by index
+            num_items = min(len(dataloader), max_batches) if max_batches else len(dataloader)
+            for batch_idx in range(num_items):
+                if max_batches and batch_idx >= max_batches:
+                    break
+                    
+                batch = dataloader[batch_idx]
+                print(f"Processing batch {batch_idx + 1} for spatial data...")
+                
+                # Check if this is a heterogeneous graph
+                if hasattr(batch, 'x_dict') and 'tx' in batch.x_dict:
+                    # Extract spatial coordinates for tx (transcript) nodes
+                    if hasattr(batch, 'x_dict') and 'tx' in batch.x_dict:
+                        tx_pos = batch['tx'].pos.cpu()
+                        tx_ids = batch['tx'].id.cpu().numpy()
+                        
+                        all_tx_positions.append(tx_pos)
+                        
+                        # Add metadata for tx nodes
+                        for i, tx_id in enumerate(tx_ids):
+                            metadata = {
+                                'node_id': tx_id,
+                                'node_type': 'tx',
+                                'batch_idx': batch_idx,
+                                'within_batch_idx': i,
+                                'x': tx_pos[i, 0].item(),
+                                'y': tx_pos[i, 1].item()
+                            }
+                            
+                            # Add gene name if available
+                            if gene_names_dict and tx_id in gene_names_dict:
+                                metadata['gene_name'] = gene_names_dict[tx_id]
+                            elif transcripts_df is not None:
+                                gene_name = transcripts_df[transcripts_df['transcript_id'] == tx_id]['feature_name'].iloc[0] if len(transcripts_df[transcripts_df['transcript_id'] == tx_id]) > 0 else 'Unknown'
+                                metadata['gene_name'] = gene_name
+                            else:
+                                metadata['gene_name'] = f'tx_{tx_id}'
+                                
+                            all_tx_metadata.append(metadata)
+                    
+                    # Extract spatial coordinates for bd (boundary/cell) nodes
+                    if 'bd' in batch.x_dict:
+                        bd_pos = batch['bd'].pos.cpu()
+                        bd_ids = batch['bd'].id
+                        
+                        all_bd_positions.append(bd_pos)
+                        
+                        # Add metadata for bd nodes
+                        for i, bd_id in enumerate(bd_ids):
+                            metadata = {
+                                'node_id': bd_id,
+                                'node_type': 'bd',
+                                'batch_idx': batch_idx,
+                                'within_batch_idx': i,
+                                'x': bd_pos[i, 0].item(),
+                                'y': bd_pos[i, 1].item()
+                            }
+                            
+                            # Add cell type if available
+                            if cell_types_dict and bd_id in cell_types_dict:
+                                metadata['cell_type'] = cell_types_dict[bd_id]
+                            else:
+                                metadata['cell_type'] = 'Unknown'
+                                
+                            all_bd_metadata.append(metadata)
+                else:
+                    print(f"  Warning: Unexpected batch structure: {type(batch)}")
+        else:
+            # It's a regular dataloader, iterate over it
+            for batch_idx, batch in enumerate(dataloader):
+                if max_batches and batch_idx >= max_batches:
+                    break
+                    
+                print(f"Processing batch {batch_idx + 1} for spatial data...")
+                print(f"  Batch keys: {list(batch.keys()) if hasattr(batch, 'keys') else 'No keys available'}")
+                
+                # Extract spatial coordinates for tx (transcript) nodes
+                if 'tx' in batch:
+                    print(f"  TX data found, has pos: {hasattr(batch['tx'], 'pos')}")
+                    if hasattr(batch['tx'], 'pos'):
+                        tx_pos = batch['tx'].pos.cpu()
+                        tx_ids = batch['tx'].id.cpu().numpy()
+                        print(f"  TX: {len(tx_ids)} transcripts")
+                        
+                        all_tx_positions.append(tx_pos)
+                        
+                        # Add metadata for tx nodes
+                        for i, tx_id in enumerate(tx_ids):
+                            metadata = {
+                                'node_id': tx_id,
+                                'node_type': 'tx',
+                                'batch_idx': batch_idx,
+                                'within_batch_idx': i,
+                                'x': tx_pos[i, 0].item(),
+                                'y': tx_pos[i, 1].item()
+                            }
+                            
+                            # Add gene name if available
+                            if gene_names_dict and tx_id in gene_names_dict:
+                                metadata['gene_name'] = gene_names_dict[tx_id]
+                            elif transcripts_df is not None:
+                                gene_name = transcripts_df[transcripts_df['transcript_id'] == tx_id]['feature_name'].iloc[0] if len(transcripts_df[transcripts_df['transcript_id'] == tx_id]) > 0 else 'Unknown'
+                                metadata['gene_name'] = gene_name
+                            else:
+                                metadata['gene_name'] = f'tx_{tx_id}'
+                                
+                            all_tx_metadata.append(metadata)
+                else:
+                    print(f"  No TX data in batch")
+                
+                # Extract spatial coordinates for bd (boundary/cell) nodes
+                if 'bd' in batch:
+                    print(f"  BD data found, has pos: {hasattr(batch['bd'], 'pos')}")
+                    if hasattr(batch['bd'], 'pos'):
+                        bd_pos = batch['bd'].pos.cpu()
+                        bd_ids = batch['bd'].id
+                        print(f"  BD: {len(bd_ids)} boundaries")
+                        
+                        all_bd_positions.append(bd_pos)
+                        
+                        # Add metadata for bd nodes
+                        for i, bd_id in enumerate(bd_ids):
+                            metadata = {
+                                'node_id': bd_id,
+                                'node_type': 'bd',
+                                'batch_idx': batch_idx,
+                                'within_batch_idx': i,
+                                'x': bd_pos[i, 0].item(),
+                                'y': bd_pos[i, 1].item()
+                            }
+                            
+                            # Add cell type if available
+                            if cell_types_dict and bd_id in cell_types_dict:
+                                metadata['cell_type'] = cell_types_dict[bd_id]
+                            else:
+                                metadata['cell_type'] = 'Unknown'
+                                
+                            all_bd_metadata.append(metadata)
+                else:
+                    print(f"  No BD data in batch")
+        
+        # Combine all spatial data
+        result = {}
+        if all_tx_positions:
+            result['tx'] = {
+                'positions': torch.cat(all_tx_positions, dim=0),
+                'metadata': pd.DataFrame(all_tx_metadata)
+            }
+        
+        if all_bd_positions:
+            result['bd'] = {
+                'positions': torch.cat(all_bd_positions, dim=0),
+                'metadata': pd.DataFrame(all_bd_metadata)
+            }
+            
+        return result
+
     def extract_embeddings_from_batches(self,
                                       model: torch.nn.Module,
                                       dataloader,
@@ -140,6 +329,7 @@ class EmbeddingExtractor:
             if 'tx' in batch_embeddings:
                 tx_emb = batch_embeddings['tx']
                 tx_ids = batch['tx'].id.cpu().numpy()
+                tx_pos = batch['tx'].pos.cpu()  # Get spatial positions
                 
                 all_tx_embeddings.append(tx_emb)
                 
@@ -149,7 +339,9 @@ class EmbeddingExtractor:
                         'node_id': tx_id,
                         'node_type': 'tx',
                         'batch_idx': batch_idx,
-                        'within_batch_idx': i
+                        'within_batch_idx': i,
+                        'x': tx_pos[i, 0].item(),
+                        'y': tx_pos[i, 1].item()
                     }
                     
                     # Add gene name if available
@@ -167,6 +359,7 @@ class EmbeddingExtractor:
             if 'bd' in batch_embeddings:
                 bd_emb = batch_embeddings['bd']
                 bd_ids = batch['bd'].id
+                bd_pos = batch['bd'].pos.cpu()  # Get spatial positions
                 
                 all_bd_embeddings.append(bd_emb)
                 
@@ -176,7 +369,9 @@ class EmbeddingExtractor:
                         'node_id': bd_id,
                         'node_type': 'bd',
                         'batch_idx': batch_idx,
-                        'within_batch_idx': i
+                        'within_batch_idx': i,
+                        'x': bd_pos[i, 0].item(),
+                        'y': bd_pos[i, 1].item()
                     }
                     
                     # Add cell type if available
@@ -418,6 +613,10 @@ class EmbeddingVisualizer:
                 plots = self._create_bd_plots(reduced_embeddings, metadata, save_dir, title_prefix)
                 
             saved_plots.update(plots)
+        
+        # Add spatial plots if spatial coordinates are available
+        spatial_plots = self._create_spatial_plots(embeddings_data, save_dir, title_prefix)
+        saved_plots.update(spatial_plots)
             
         return saved_plots
     
@@ -520,6 +719,351 @@ class EmbeddingVisualizer:
         
         return plots
     
+    def _create_spatial_plots(self,
+                            embeddings_data: Dict[str, Dict],
+                            save_dir: Path,
+                            title_prefix: str) -> Dict[str, str]:
+        """
+        Create plots for embeddings colored by spatial location metrics.
+        
+        Args:
+            embeddings_data: Dictionary containing embeddings and metadata with spatial coordinates
+            save_dir: Directory to save plots
+            title_prefix: Prefix for plot titles
+            
+        Returns:
+            Dictionary mapping plot names to file paths
+        """
+        plots = {}
+        
+        for node_type, data in embeddings_data.items():
+            if 'x' not in data['metadata'].columns or 'y' not in data['metadata'].columns:
+                print(f"Warning: No spatial coordinates found for {node_type} nodes")
+                continue
+                
+            embeddings = data['embeddings']
+            metadata = data['metadata']
+            
+            # Calculate spatial metrics
+            x_coords = metadata['x'].values
+            y_coords = metadata['y'].values
+            
+            # Metric 1: Distance from origin
+            distance_from_origin = np.sqrt(x_coords**2 + y_coords**2)
+            
+            # Metric 2: Spatial quadrants
+            x_median = np.median(x_coords)
+            y_median = np.median(y_coords)
+            quadrants = []
+            for x, y in zip(x_coords, y_coords):
+                if x >= x_median and y >= y_median:
+                    quadrants.append('Q1 (Top-Right)')
+                elif x < x_median and y >= y_median:
+                    quadrants.append('Q2 (Top-Left)')
+                elif x < x_median and y < y_median:
+                    quadrants.append('Q3 (Bottom-Left)')
+                else:
+                    quadrants.append('Q4 (Bottom-Right)')
+            
+            # Apply dimensionality reduction
+            reduced_embeddings = self._apply_dimensionality_reduction(
+                embeddings, 
+                node_type=node_type
+            )
+            
+            # Plot 1: Colored by distance from origin
+            fig, ax = plt.subplots(figsize=self.config.figsize)
+            
+            scatter = ax.scatter(
+                reduced_embeddings[:, 0], 
+                reduced_embeddings[:, 1],
+                c=distance_from_origin,
+                s=self.config.point_size,
+                alpha=self.config.alpha,
+                cmap='viridis'
+            )
+            
+            # Add colorbar
+            cbar = plt.colorbar(scatter, ax=ax)
+            cbar.set_label('Distance from Origin (µm)', rotation=270, labelpad=20)
+            
+            ax.set_xlabel(f'{self.config.method.upper()} 1')
+            ax.set_ylabel(f'{self.config.method.upper()} 2')
+            ax.set_title(f'{title_prefix}{node_type.upper()} Embeddings by Distance from Origin')
+            ax.grid(True, alpha=0.3)
+            
+            plt.tight_layout()
+            plot_path = save_dir / f'{node_type}_embeddings_by_spatial_distance.{self.config.save_format}'
+            plt.savefig(plot_path, dpi=self.config.dpi, bbox_inches='tight')
+            plt.close()
+            plots[f'{node_type}_by_spatial_distance'] = str(plot_path)
+            
+            # Plot 2: Colored by spatial quadrants
+            fig, ax = plt.subplots(figsize=self.config.figsize)
+            
+            unique_quadrants = sorted(set(quadrants))
+            colors = plt.cm.Set1(np.linspace(0, 1, len(unique_quadrants)))
+            
+            for quadrant, color in zip(unique_quadrants, colors):
+                mask = np.array(quadrants) == quadrant
+                ax.scatter(
+                    reduced_embeddings[mask, 0], 
+                    reduced_embeddings[mask, 1],
+                    c=[color],
+                    s=self.config.point_size,
+                    alpha=self.config.alpha,
+                    label=quadrant
+                )
+            
+            ax.set_xlabel(f'{self.config.method.upper()} 1')
+            ax.set_ylabel(f'{self.config.method.upper()} 2')
+            ax.set_title(f'{title_prefix}{node_type.upper()} Embeddings by Spatial Quadrants')
+            ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+            ax.grid(True, alpha=0.3)
+            
+            plt.tight_layout()
+            plot_path = save_dir / f'{node_type}_embeddings_by_spatial_quadrants.{self.config.save_format}'
+            plt.savefig(plot_path, dpi=self.config.dpi, bbox_inches='tight')
+            plt.close()
+            plots[f'{node_type}_by_spatial_quadrants'] = str(plot_path)
+        
+        return plots
+    
+    def _subsample_spatial_data_by_gene_type(self, 
+                                           spatial_data: Dict[str, Dict],
+                                           gene_types_dict: Optional[Dict] = None) -> Dict[str, Dict]:
+        """
+        Subsample spatial data for transcript nodes by gene type.
+        
+        Args:
+            spatial_data: Dictionary containing spatial coordinates and metadata
+            gene_types_dict: Mapping from gene name to gene type
+            
+        Returns:
+            Subsampled spatial data
+        """
+        result = {}
+        
+        for node_type, data in spatial_data.items():
+            positions = data['positions']
+            metadata = data['metadata']
+            
+            if node_type == 'tx' and gene_types_dict and 'gene_name' in metadata.columns:
+                # Add gene type information
+                metadata['gene_type'] = metadata['gene_name'].map(gene_types_dict)
+                
+                # Subsample by gene type
+                sampled_indices = []
+                for gene_type in metadata['gene_type'].dropna().unique():
+                    gene_type_mask = metadata['gene_type'] == gene_type
+                    gene_type_indices = metadata[gene_type_mask].index
+                    n_sample = min(len(gene_type_indices), self.config.spatial_max_points_per_gene_type)
+                    sampled_indices.extend(np.random.choice(gene_type_indices, n_sample, replace=False))
+                
+                # Include transcripts without gene type information (up to limit)
+                no_gene_type_mask = metadata['gene_type'].isna()
+                if no_gene_type_mask.any():
+                    no_gene_type_indices = metadata[no_gene_type_mask].index
+                    n_sample = min(len(no_gene_type_indices), self.config.spatial_max_points_per_gene_type)
+                    sampled_indices.extend(np.random.choice(no_gene_type_indices, n_sample, replace=False))
+                
+                sampled_indices = np.array(sampled_indices)
+                
+                result[node_type] = {
+                    'positions': positions[sampled_indices],
+                    'metadata': metadata.iloc[sampled_indices].copy().reset_index(drop=True)
+                }
+            else:
+                # No subsampling for bd nodes or when gene_types_dict is not provided
+                result[node_type] = data
+                
+        return result
+    
+    def visualize_spatial_all_batches(self,
+                                    spatial_data: Dict[str, Dict],
+                                    save_dir: Path,
+                                    gene_types_dict: Optional[Dict] = None,
+                                    max_batches_to_plot: Optional[int] = None) -> Dict[str, str]:
+        """
+        Create spatial visualization plots with all batches combined, colored by batch index.
+        Creates separate plots for tx and bd nodes.
+        
+        Args:
+            spatial_data: Dictionary containing spatial coordinates and metadata
+            save_dir: Directory to save plots
+            gene_types_dict: Mapping from gene name to gene type (used for subsampling only)
+            max_batches_to_plot: Maximum number of batches to include
+            
+        Returns:
+            Dictionary mapping plot names to file paths
+        """
+        save_dir.mkdir(parents=True, exist_ok=True)
+        saved_plots = {}
+        
+        # Subsample data if gene types are provided
+        if gene_types_dict:
+            spatial_data = self._subsample_spatial_data_by_gene_type(spatial_data, gene_types_dict)
+        
+        # Get all unique batch indices
+        all_batch_indices = set()
+        for node_type, data in spatial_data.items():
+            all_batch_indices.update(data['metadata']['batch_idx'].unique())
+        
+        all_batch_indices = sorted(all_batch_indices)
+        
+        if max_batches_to_plot:
+            all_batch_indices = all_batch_indices[:max_batches_to_plot]
+        
+        print(f"Creating combined spatial plots for {len(all_batch_indices)} batches...")
+        
+        # Create colormap for batches - if more than 10 batches, group them into consecutive ranges
+        if len(all_batch_indices) > 10:
+            # Group batches into consecutive ranges of 10
+            batches_per_group = 10
+            n_groups = (len(all_batch_indices) + batches_per_group - 1) // batches_per_group  # Ceiling division
+            
+            batch_groups = {}
+            batch_ranges = {}
+            
+            for i, batch_idx in enumerate(all_batch_indices):
+                group_idx = i // batches_per_group  # Integer division for consecutive grouping
+                batch_groups[batch_idx] = group_idx
+                
+                # Track the range for each group
+                if group_idx not in batch_ranges:
+                    batch_ranges[group_idx] = []
+                batch_ranges[group_idx].append(batch_idx)
+            
+            # Use distinct colors for each group
+            group_colors = plt.cm.tab10(np.linspace(0, 1, min(n_groups, 10)))
+            batch_to_color = {batch_idx: group_colors[group_idx % 10] for batch_idx, group_idx in batch_groups.items()}
+            
+            print(f"  Grouping {len(all_batch_indices)} batches into {n_groups} consecutive groups of {batches_per_group}")
+            for group_idx, batch_list in batch_ranges.items():
+                print(f"    Group {group_idx}: Batches {min(batch_list)}-{max(batch_list)}")
+        else:
+            # Use individual colors for each batch
+            batch_colors = plt.cm.tab10(np.linspace(0, 1, len(all_batch_indices)))
+            batch_to_color = dict(zip(all_batch_indices, batch_colors))
+            print(f"  Using individual colors for {len(all_batch_indices)} batches")
+        
+        # Plot 1: All transcripts colored by batch
+        if 'tx' in spatial_data:
+            print("Creating transcript plot colored by batch...")
+            fig, ax = plt.subplots(figsize=self.config.figsize)
+            
+            tx_data = spatial_data['tx']
+            
+            for batch_idx in all_batch_indices:
+                batch_mask = tx_data['metadata']['batch_idx'] == batch_idx
+                if batch_mask.any():
+                    batch_positions = tx_data['positions'][batch_mask]
+                    
+                    # Create label based on grouping
+                    if len(all_batch_indices) > 10:
+                        group_idx = batch_groups[batch_idx]
+                        # Get the batch range for this group
+                        batches_in_group = batch_ranges[group_idx]
+                        # Only label the first batch in each group
+                        if batch_idx == batches_in_group[0]:
+                            if len(batches_in_group) == 1:
+                                label = f'Batch {batch_idx}'
+                            else:
+                                label = f'Batches {min(batches_in_group)}-{max(batches_in_group)}'
+                        else:
+                            label = None  # Don't repeat label for same color group
+                    else:
+                        label = f'Batch {batch_idx}'
+                    
+                    ax.scatter(batch_positions[:, 0], batch_positions[:, 1],
+                             c=[batch_to_color[batch_idx]], s=self.config.spatial_tx_size,
+                             alpha=self.config.spatial_alpha, label=label)
+            
+            ax.set_xlabel('X Coordinate (µm)')
+            ax.set_ylabel('Y Coordinate (µm)')
+            ax.set_title('All Transcripts - Colored by Batch Index')
+            ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+            ax.grid(True, alpha=0.3)
+            
+            plt.tight_layout()
+            plot_path = save_dir / f'tx_all_batches.{self.config.save_format}'
+            plt.savefig(plot_path, dpi=self.config.dpi, bbox_inches='tight')
+            plt.close()
+            saved_plots['tx_all_batches'] = str(plot_path)
+        
+        # Plot 2: All boundaries colored by batch
+        if 'bd' in spatial_data:
+            print("Creating boundary plot colored by batch...")
+            fig, ax = plt.subplots(figsize=self.config.figsize)
+            
+            bd_data = spatial_data['bd']
+            
+            for batch_idx in all_batch_indices:
+                batch_mask = bd_data['metadata']['batch_idx'] == batch_idx
+                if batch_mask.any():
+                    batch_positions = bd_data['positions'][batch_mask]
+                    
+                    # Create label based on grouping
+                    if len(all_batch_indices) > 10:
+                        group_idx = batch_groups[batch_idx]
+                        # Get the batch range for this group
+                        batches_in_group = batch_ranges[group_idx]
+                        # Only label the first batch in each group
+                        if batch_idx == batches_in_group[0]:
+                            if len(batches_in_group) == 1:
+                                label = f'Batch {batch_idx}'
+                            else:
+                                label = f'Batches {min(batches_in_group)}-{max(batches_in_group)}'
+                        else:
+                            label = None  # Don't repeat label for same color group
+                    else:
+                        label = f'Batch {batch_idx}'
+                    
+                    ax.scatter(batch_positions[:, 0], batch_positions[:, 1],
+                             c=[batch_to_color[batch_idx]], s=self.config.spatial_bd_size,
+                             alpha=self.config.spatial_alpha, marker='s', label=label)
+            
+            ax.set_xlabel('X Coordinate (µm)')
+            ax.set_ylabel('Y Coordinate (µm)')
+            ax.set_title('All Boundaries - Colored by Batch Index')
+            ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+            ax.grid(True, alpha=0.3)
+            
+            plt.tight_layout()
+            plot_path = save_dir / f'bd_all_batches.{self.config.save_format}'
+            plt.savefig(plot_path, dpi=self.config.dpi, bbox_inches='tight')
+            plt.close()
+            saved_plots['bd_all_batches'] = str(plot_path)
+        
+        return saved_plots
+    
+    def visualize_spatial_by_batch(self,
+                                 spatial_data: Dict[str, Dict],
+                                 save_dir: Path,
+                                 gene_types_dict: Optional[Dict] = None,
+                                 max_batches_to_plot: Optional[int] = None) -> Dict[str, str]:
+        """
+        Create spatial visualization plots for different batches separately.
+        (Legacy function - kept for compatibility)
+        
+        Args:
+            spatial_data: Dictionary containing spatial coordinates and metadata
+            save_dir: Directory to save plots
+            gene_types_dict: Mapping from gene name to gene type
+            max_batches_to_plot: Maximum number of batches to plot
+            
+        Returns:
+            Dictionary mapping plot names to file paths
+        """
+        # This is now just a wrapper that calls the combined plot function
+        # with combined_plot=False for backwards compatibility
+        return self.visualize_spatial_all_batches(
+            spatial_data=spatial_data,
+            save_dir=save_dir, 
+            gene_types_dict=gene_types_dict,
+            max_batches_to_plot=max_batches_to_plot
+        )
+    
     def save_embeddings(self, 
                        embeddings_data: Dict[str, Dict], 
                        save_path: Path) -> None:
@@ -613,5 +1157,78 @@ def visualize_embeddings_from_model(model: torch.nn.Module,
     
     # Save embeddings
     visualizer.save_embeddings(embeddings_data, save_dir / 'embeddings_data.pkl')
+    
+    return plots
+
+
+def visualize_spatial_from_dataloader(dataloader,
+                                    save_dir: Path,
+                                    transcripts_df: pd.DataFrame,
+                                    gene_types_dict: Optional[Dict] = None,
+                                    cell_types_dict: Optional[Dict] = None,
+                                    max_batches: Optional[int] = None,
+                                    max_batches_to_plot: Optional[int] = None,
+                                    config: EmbeddingVisualizationConfig = None,
+                                    combined_plot: bool = True) -> Dict[str, str]:
+    """
+    Convenience function to extract and visualize spatial data from a dataloader.
+    
+    Args:
+        dataloader: DataLoader containing batches
+        save_dir: Directory to save visualizations
+        transcripts_df: DataFrame containing transcript information
+        gene_types_dict: Mapping from gene name to gene type
+        cell_types_dict: Mapping from cell ID to cell type
+        max_batches: Maximum number of batches to process
+        max_batches_to_plot: Maximum number of batches to plot
+        config: Visualization configuration
+        combined_plot: If True, create combined plots with all batches colored by batch index.
+                      If False, create separate plots for each batch.
+        
+    Returns:
+        Dictionary mapping plot names to file paths
+    """
+    # Create gene names dictionary from transcripts
+    gene_names_dict = dict(zip(transcripts_df['transcript_id'], transcripts_df['feature_name']))
+    
+    # Extract spatial data
+    extractor = EmbeddingExtractor()
+    spatial_data = extractor.extract_spatial_data_from_batches(
+        dataloader=dataloader,
+        max_batches=max_batches,
+        gene_names_dict=gene_names_dict,
+        cell_types_dict=cell_types_dict,
+        transcripts_df=transcripts_df
+    )
+    
+    # Visualize spatial data
+    visualizer = EmbeddingVisualizer(config)
+    if combined_plot:
+        plots = visualizer.visualize_spatial_all_batches(
+            spatial_data=spatial_data,
+            save_dir=save_dir,
+            gene_types_dict=gene_types_dict,
+            max_batches_to_plot=max_batches_to_plot
+        )
+    else:
+        plots = visualizer.visualize_spatial_by_batch(
+            spatial_data=spatial_data,
+            save_dir=save_dir,
+            gene_types_dict=gene_types_dict,
+            max_batches_to_plot=max_batches_to_plot
+        )
+    
+    # Save spatial data
+    save_data = {}
+    for node_type, data in spatial_data.items():
+        save_data[node_type] = {
+            'positions': data['positions'].numpy(),
+            'metadata': data['metadata']
+        }
+    
+    with open(save_dir / 'spatial_data.pkl', 'wb') as f:
+        pickle.dump(save_data, f)
+    
+    print(f"Spatial data saved to {save_dir / 'spatial_data.pkl'}")
     
     return plots

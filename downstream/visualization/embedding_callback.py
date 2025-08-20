@@ -360,6 +360,9 @@ class EmbeddingVisualizationCallback(Callback):
                 writer.add_image(plot_info['tag'], plot_image, global_step=epoch, dataformats='HWC')
             except Exception as e:
                 print(f"Error creating plot {plot_info['tag']}: {str(e)}")
+        
+        # Add spatial plots if spatial coordinates are available
+        self._log_spatial_plots(writer, reduced_embeddings, metadata, node_type, epoch, prefix)
     
     def _create_plot_image(self, plot_info: Dict) -> np.ndarray:
         """Create a plot image as numpy array for TensorBoard logging."""
@@ -404,6 +407,135 @@ class EmbeddingVisualizationCallback(Callback):
         img = Image.open(buf)
         img_array = np.array(img)
         
+        plt.close(fig)
+        buf.close()
+        
+        return img_array
+    
+    def _log_spatial_plots(self, writer, reduced_embeddings: np.ndarray, metadata: pd.DataFrame,
+                          node_type: str, epoch: int, prefix: str = ""):
+        """Log spatial-based visualization plots to TensorBoard."""
+        if 'x' not in metadata.columns or 'y' not in metadata.columns:
+            return  # No spatial coordinates available
+            
+        try:
+            # Calculate spatial metrics
+            x_coords = metadata['x'].values
+            y_coords = metadata['y'].values
+            
+            # Metric 1: Distance from origin
+            distance_from_origin = np.sqrt(x_coords**2 + y_coords**2)
+            
+            # Metric 2: Spatial quadrants
+            x_median = np.median(x_coords)
+            y_median = np.median(y_coords)
+            quadrants = []
+            for x, y in zip(x_coords, y_coords):
+                if x >= x_median and y >= y_median:
+                    quadrants.append('Q1 (Top-Right)')
+                elif x < x_median and y >= y_median:
+                    quadrants.append('Q2 (Top-Left)')
+                elif x < x_median and y < y_median:
+                    quadrants.append('Q3 (Bottom-Left)')
+                else:
+                    quadrants.append('Q4 (Bottom-Right)')
+            
+            # Create spatial distance plot
+            spatial_distance_plot = self._create_spatial_distance_plot(
+                reduced_embeddings, distance_from_origin, 
+                f'{prefix}{node_type.upper()} Embeddings by Spatial Distance - Epoch {epoch}'
+            )
+            writer.add_image(
+                f'{prefix}plots/{node_type}_by_spatial_distance', 
+                spatial_distance_plot, 
+                global_step=epoch, 
+                dataformats='HWC'
+            )
+            
+            # Create spatial quadrants plot
+            spatial_quadrants_plot = self._create_spatial_quadrants_plot(
+                reduced_embeddings, quadrants,
+                f'{prefix}{node_type.upper()} Embeddings by Spatial Quadrants - Epoch {epoch}'
+            )
+            writer.add_image(
+                f'{prefix}plots/{node_type}_by_spatial_quadrants', 
+                spatial_quadrants_plot, 
+                global_step=epoch, 
+                dataformats='HWC'
+            )
+            
+        except Exception as e:
+            print(f"Error creating spatial plots for {node_type}: {str(e)}")
+    
+    def _create_spatial_distance_plot(self, reduced_embeddings: np.ndarray, 
+                                    distance_values: np.ndarray, title: str) -> np.ndarray:
+        """Create spatial distance plot for TensorBoard."""
+        fig, ax = plt.subplots(figsize=(10, 8))
+        
+        scatter = ax.scatter(
+            reduced_embeddings[:, 0], 
+            reduced_embeddings[:, 1],
+            c=distance_values,
+            s=self.config.point_size,
+            alpha=self.config.alpha,
+            cmap='viridis'
+        )
+        
+        # Add colorbar
+        cbar = plt.colorbar(scatter, ax=ax)
+        cbar.set_label('Distance from Origin (µm)', rotation=270, labelpad=20)
+        
+        ax.set_xlabel(f'{self.config.method.upper()} 1')
+        ax.set_ylabel(f'{self.config.method.upper()} 2')
+        ax.set_title(title, fontsize=12)
+        ax.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        
+        # Convert to image array
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+        buf.seek(0)
+        img = Image.open(buf)
+        img_array = np.array(img)
+        plt.close(fig)
+        buf.close()
+        
+        return img_array
+    
+    def _create_spatial_quadrants_plot(self, reduced_embeddings: np.ndarray, 
+                                     quadrants: List[str], title: str) -> np.ndarray:
+        """Create spatial quadrants plot for TensorBoard."""
+        fig, ax = plt.subplots(figsize=(10, 8))
+        
+        unique_quadrants = sorted(set(quadrants))
+        colors = plt.cm.Set1(np.linspace(0, 1, len(unique_quadrants)))
+        
+        for quadrant, color in zip(unique_quadrants, colors):
+            mask = np.array(quadrants) == quadrant
+            ax.scatter(
+                reduced_embeddings[mask, 0], 
+                reduced_embeddings[mask, 1],
+                c=[color],
+                s=self.config.point_size,
+                alpha=self.config.alpha,
+                label=quadrant
+            )
+        
+        ax.set_xlabel(f'{self.config.method.upper()} 1')
+        ax.set_ylabel(f'{self.config.method.upper()} 2')
+        ax.set_title(title, fontsize=12)
+        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
+        ax.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        
+        # Convert to image array
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+        buf.seek(0)
+        img = Image.open(buf)
+        img_array = np.array(img)
         plt.close(fig)
         buf.close()
         
