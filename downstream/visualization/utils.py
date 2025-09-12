@@ -9,6 +9,7 @@ from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 from scipy.stats import entropy
 from sklearn.metrics import jaccard_score
+import os
 
 @dataclass
 class VisualizationConfig:
@@ -239,3 +240,54 @@ def hex_to_rgb(hex_color: str) -> Tuple[float, float, float]:
     """Convert hex color string to RGB tuple."""
     hex_color = hex_color.lstrip('#')
     return tuple(int(hex_color[i:i+2], 16)/255 for i in (0, 2, 4))
+
+def load_cell_type_color_palette(excel_path: Optional[Path] = None) -> Dict[str, str]:
+    """
+    Load cell type color palette from Excel file.
+    
+    Args:
+        excel_path: Path to the Excel file. If None, uses default path.
+        
+    Returns:
+        Dictionary mapping cell type names to color codes
+    """
+    if excel_path is None:
+        # Default path relative to this file
+        current_dir = Path(__file__).parent
+        excel_path = current_dir / '../utils/cell_type_color.xlsx'
+    
+    try:
+        df = pd.read_excel(excel_path)
+        
+        # Create mapping from Cell Type to Color Code
+        color_palette = {}
+        for _, row in df.iterrows():
+            cell_type = row['Cell Type']
+            color_code = row['Color Code']
+            color_palette[cell_type] = color_code
+            
+        print(f"Loaded {len(color_palette)} cell type colors from {excel_path}")
+        return color_palette
+        
+    except Exception as e:
+        print(f"Warning: Could not load cell type colors from {excel_path}: {e}")
+        print("Using fallback color palette")
+        # Fallback to hardcoded palette
+        return {
+            'B Cells': '#D8F55E',
+            'B-cells': '#D8F55E',
+            'Endothelial': '#DCC8C7',
+            'Fibroblasts': '#a65628',
+            'Intestinal Epithelial': '#8BB7F4',
+            'Myeloid': '#E1D168',
+            'Neuronal': '#9467bd',
+            'Smooth Muscle': '#8c564b',
+            'T Cells': '#84D68E',
+            'T-cells': '#84D68E',
+            'Tumor': '#E77377',
+            'Cancer Epithelial': '#E77377',
+            'Normal Epithelial': '#8BB7F4',
+            'CAFs': '#B999E5',
+            'Plasmablasts': '#F3FCCC',
+            'PVL': '#EADEDD',
+        }

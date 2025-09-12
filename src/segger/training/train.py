@@ -19,7 +19,7 @@ class LitSegger(LightningModule):
         learning_rate: float = 1e-3,
         align_loss: bool = False,
         align_lambda: float = 0,
-        cycle_length: int = 1000,    # Steps per cycle (e.g., 1000 steps)
+        cycle_length: int = 1000,  # Steps per cycle for cosine scheduling
     ):
         """
         Initialize the Segger training module.
@@ -109,13 +109,10 @@ class LitSegger(LightningModule):
             self.log("align_max", torch.max(out_values), prog_bar=True, batch_size=batch.num_graphs)
             self.log("align_min", torch.min(out_values), prog_bar=True, batch_size=batch.num_graphs)
             self.log("align_loss", align_loss, prog_bar=True, batch_size=batch.num_graphs)
-            current_step = self.global_step
-            align_weight = self.get_cosine_weight(current_step)
-            # self.log("align_weight", align_weight, prog_bar=True, batch_size=batch.num_graphs)
-            loss =  self.align_lambda * align_loss + (1-self.align_lambda) * loss
-            # loss = self.align_lambda * align_loss +  loss
-            # loss = align_loss
-            #TOOD: cosine scheduling -- add self-loops
+            # Get cosine weight for align loss (currently unused but computed for future use)
+            # align_weight = self.get_cosine_weight(self.global_step)
+            loss = self.align_lambda * align_loss + (1 - self.align_lambda) * loss
+            # TODO: Implement cosine scheduling and add self-loops
         return loss
 
     def validation_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
@@ -162,19 +159,6 @@ class LitSegger(LightningModule):
         self.log("validation_f1", f1_res, prog_bar=True, batch_size=batch.num_graphs)
 
         return loss
-
-    # def configure_optimizers(self) -> torch.optim.Optimizer:
-    #     """
-    #     Configures the optimizer for training.
-
-    #     Returns
-    #     -------
-    #     torch.optim.Optimizer
-    #         The optimizer for training.
-    #     """
-    #     optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
-    #     return optimizer
-
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(), lr=1e-3, weight_decay=1e-4)

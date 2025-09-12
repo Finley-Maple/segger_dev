@@ -1,0 +1,1 @@
+python post_embedding_visualization.py --dataset breast --model_type seq --align_loss --spatial_region 5000 7000 5000 6000

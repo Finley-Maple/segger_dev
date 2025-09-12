@@ -2,7 +2,19 @@
 PyTorch Lightning Callback for Embedding Visualization
 
 This module provides Lightning callbacks for logging and visualizing embeddings
-during training, including TensorBoard integration and periodic plot generation.
+during training, including Weights & Biases integration and periodic plot generation.
+
+Key Features:
+- Logs high-dimensional embeddings as wandb Tables for easy exploration
+- Creates 2D visualization plots and logs them as wandb Images
+- Supports spatial coordinate visualization with custom coloring
+- Integrates seamlessly with PyTorch Lightning and WandbLogger
+- Maintains backward compatibility with file-based plot generation
+
+Migration from TensorBoard:
+- Replace `log_to_tensorboard=True` with `log_to_wandb=True`
+- Use `WandbLogger` instead of `TensorBoardLogger` in your trainer
+- Install wandb: `pip install wandb`
 """
 
 import torch
@@ -15,14 +27,14 @@ import pickle
 import io
 from PIL import Image
 from lightning.pytorch.callbacks import Callback
-from lightning.pytorch.loggers import TensorBoardLogger
+from lightning.pytorch.loggers import WandbLogger
 import warnings
 
 try:
-    from torch.utils.tensorboard import SummaryWriter
+    import wandb
 except ImportError:
-    warnings.warn("TensorBoard not available. Please install with: pip install tensorboard")
-    SummaryWriter = None
+    warnings.warn("Weights & Biases not available. Please install with: pip install wandb")
+    wandb = None
 
 try:
     import umap
@@ -30,7 +42,45 @@ except ImportError:
     warnings.warn("UMAP not installed. Please install with: pip install umap-learn")
     umap = None
 
-from .embedding_visualization import EmbeddingExtractor, EmbeddingVisualizer, EmbeddingVisualizationConfig
+try:
+    from .embedding_visualization import EmbeddingExtractor, EmbeddingVisualizer, EmbeddingVisualizationConfig
+    from .utils import load_cell_type_color_palette
+except ImportError:
+    # Fallback for when running as standalone module
+    try:
+        from embedding_visualization import EmbeddingExtractor, EmbeddingVisualizer, EmbeddingVisualizationConfig
+        from utils import load_cell_type_color_palette
+    except ImportError:
+        warnings.warn("Could not import visualization dependencies. Some functionality may be limited.")
+        # Create dummy classes for testing
+        class EmbeddingExtractor:
+            def extract_embeddings_from_batches(self, *args, **kwargs):
+                return {}
+                
+        class EmbeddingVisualizer:
+            def __init__(self, config=None):
+                pass
+            def _apply_dimensionality_reduction(self, *args, **kwargs):
+                return np.array([[0, 0]])
+            def visualize_embeddings(self, *args, **kwargs):
+                return {}
+            def save_embeddings(self, *args, **kwargs):
+                pass
+            def fit_reference_reducers(self, *args, **kwargs):
+                pass
+            def create_interactive_dashboard(self, *args, **kwargs):
+                return None
+                
+        class EmbeddingVisualizationConfig:
+            def __init__(self):
+                self.point_size = 10
+                self.alpha = 0.7
+                self.method = 'umap'
+                self.save_format = 'png'
+                self.dpi = 300
+                
+        def load_cell_type_color_palette():
+            return {}
 
 
 class EmbeddingVisualizationCallback(Callback):
@@ -38,16 +88,31 @@ class EmbeddingVisualizationCallback(Callback):
     Lightning callback for visualizing embeddings during training.
     
     This callback extracts and visualizes node embeddings at specified intervals
-    during training, supporting both TensorBoard logging and file-based plot generation.
+    during training, supporting both Weights & Biases logging and file-based plot generation.
+    
+    Example:
+        To use with wandb, initialize your trainer with a WandbLogger:
+        
+        ```python
+        from lightning.pytorch.loggers import WandbLogger
+        
+        wandb_logger = WandbLogger(project="my_project", name="my_run")
+        callback = EmbeddingVisualizationCallback(
+            dataloader=val_dataloader,
+            transcripts_df=transcripts_df,
+            log_to_wandb=True
+        )
+        trainer = Trainer(logger=wandb_logger, callbacks=[callback])
+        ```
     """
     
     def __init__(self,
                  dataloader,
                  transcripts_df: pd.DataFrame,
                  log_every_n_epochs: int = 10,
-                 max_batches_per_log: int = 80,
+                 max_batches_per_log: int = 40,
                  save_plots: bool = True,
-                 log_to_tensorboard: bool = True,
+                 log_to_wandb: bool = True,
                  save_embeddings: bool = False,
                  gene_types_dict: Optional[Dict] = None,
                  cell_types_dict: Optional[Dict] = None,
@@ -64,7 +129,7 @@ class EmbeddingVisualizationCallback(Callback):
             log_every_n_epochs: Frequency of logging (in epochs)
             max_batches_per_log: Maximum number of batches to process per logging event
             save_plots: Whether to save plots to disk
-            log_to_tensorboard: Whether to log embeddings to TensorBoard
+            log_to_wandb: Whether to log embeddings to Weights & Biases
             save_embeddings: Whether to save raw embeddings to disk
             gene_types_dict: Mapping from gene name to gene type
             cell_types_dict: Mapping from cell ID to cell type
@@ -80,7 +145,7 @@ class EmbeddingVisualizationCallback(Callback):
         self.log_every_n_epochs = log_every_n_epochs
         self.max_batches_per_log = max_batches_per_log
         self.save_plots = save_plots
-        self.log_to_tensorboard = log_to_tensorboard
+        self.log_to_wandb = log_to_wandb
         self.save_embeddings = save_embeddings
         self.gene_types_dict = gene_types_dict
         self.cell_types_dict = cell_types_dict
@@ -102,6 +167,35 @@ class EmbeddingVisualizationCallback(Callback):
         # Store embeddings for reference fitting
         self.stored_embeddings = {} if use_fixed_coordinates else None
         self.reference_fitted = False
+        
+        # Load cell type color palette
+        self.cell_type_color_palette = load_cell_type_color_palette()
+    
+    def _get_gene_type_colors(self, gene_types: List[str]) -> List[str]:
+        """
+        Get colors for gene types using the loaded palette.
+        
+        Args:
+            gene_types: List of gene type names
+            
+        Returns:
+            List of color codes corresponding to the gene types
+        """
+        colors = []
+        fallback_colors = [
+            '#999999', '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728',
+            '#e377c2', '#7f7f7f', '#bcbd22', '#aec7e8', '#17becf'
+        ]
+        
+        fallback_index = 0
+        for gene_type in gene_types:
+            if gene_type in self.cell_type_color_palette:
+                colors.append(self.cell_type_color_palette[gene_type])
+            else:
+                colors.append(fallback_colors[fallback_index % len(fallback_colors)])
+                fallback_index += 1
+                
+        return colors
     
     def on_train_epoch_end(self, trainer, pl_module):
         """Called when the train epoch ends."""
@@ -165,10 +259,38 @@ class EmbeddingVisualizationCallback(Callback):
                     gene_types_dict=self.gene_types_dict
                 )
                 print(f"Saved embedding plots to {save_dir}")
+                
+                # Create interactive dashboard if tx data is available
+                if 'tx' in embeddings_data:
+                    try:
+                        # Create spatial data from embeddings data for the dashboard
+                        if 'x' in embeddings_data['tx']['metadata'].columns:
+                            import torch
+                            spatial_data_for_dashboard = {
+                                'tx': {
+                                    'positions': torch.column_stack([
+                                        torch.tensor(embeddings_data['tx']['metadata']['x'].values),
+                                        torch.tensor(embeddings_data['tx']['metadata']['y'].values)
+                                    ]),
+                                    'metadata': embeddings_data['tx']['metadata']
+                                }
+                            }
+                            
+                            interactive_plot_path = self.visualizer.create_interactive_dashboard(
+                                embeddings_data=embeddings_data,
+                                spatial_data=spatial_data_for_dashboard,
+                                save_dir=save_dir,
+                                title_prefix=title_prefix,
+                                gene_types_dict=self.gene_types_dict
+                            )
+                            if interactive_plot_path:
+                                print(f"Saved interactive dashboard to {interactive_plot_path}")
+                    except Exception as e:
+                        print(f"Warning: Could not create interactive dashboard: {e}")
             
-            # Log to TensorBoard if requested
-            if self.log_to_tensorboard and hasattr(trainer, 'logger'):
-                self._log_to_tensorboard(trainer.logger, embeddings_data, epoch, prefix)
+            # Log to Weights & Biases if requested
+            if self.log_to_wandb and hasattr(trainer, 'logger'):
+                self._log_to_wandb(trainer.logger, embeddings_data, epoch, prefix)
             
             # Save raw embeddings if requested
             if self.save_embeddings:
@@ -249,20 +371,21 @@ class EmbeddingVisualizationCallback(Callback):
                 except Exception as e:
                     print(f"Error regenerating plots for epoch {epoch}: {str(e)}")
     
-    def _log_to_tensorboard(self, logger, embeddings_data: Dict, epoch: int, prefix: str = ""):
-        """Log embeddings and visualization plots to TensorBoard."""
-        if not isinstance(logger, TensorBoardLogger) or SummaryWriter is None:
-            print("TensorBoard logging not available")
+    def _log_to_wandb(self, logger, embeddings_data: Dict, epoch: int, prefix: str = ""):
+        """Log embeddings and visualization plots to Weights & Biases."""
+        if not isinstance(logger, WandbLogger) or wandb is None:
+            print("Weights & Biases logging not available")
             return
             
-        writer = logger.experiment
-        
-        for node_type, data in embeddings_data.items():
+        # Only process tx nodes
+        if 'tx' in embeddings_data:
+            node_type = 'tx'
+            data = embeddings_data[node_type]
             embeddings = data['embeddings']
             metadata = data['metadata']
             
-            # Subsample for TensorBoard (TensorBoard can be slow with large datasets)
-            max_points = 1000
+            # Subsample for wandb (to avoid performance issues with very large datasets)
+            max_points = 2000  # wandb can handle more points than TensorBoard
             if len(embeddings) > max_points:
                 indices = np.random.choice(len(embeddings), max_points, replace=False)
                 embeddings_subset = embeddings[indices]
@@ -277,51 +400,61 @@ class EmbeddingVisualizationCallback(Callback):
                 node_type=node_type
             )
             
-            # Log high-dimensional embeddings to TensorBoard projector
-            self._log_embedding_projector(writer, embeddings_subset, metadata_subset, node_type, epoch, prefix)
+            # Log high-dimensional embeddings as scatter plots and tables
+            self._log_wandb_embeddings(embeddings_subset, metadata_subset, node_type, epoch, prefix)
             
             # Log 2D visualization plots as images
-            self._log_embedding_plots(writer, reduced_embeddings, metadata_subset, node_type, epoch, prefix)
+            self._log_wandb_plots(reduced_embeddings, metadata_subset, node_type, epoch, prefix)
     
-    def _log_embedding_projector(self, writer, embeddings: torch.Tensor, metadata: pd.DataFrame, 
-                                node_type: str, epoch: int, prefix: str = ""):
-        """Log high-dimensional embeddings to TensorBoard projector."""
-        # Prepare labels for TensorBoard projector
-        if node_type == 'tx':
-            if self.gene_types_dict and 'gene_name' in metadata.columns:
-                metadata['gene_type'] = metadata['gene_name'].map(self.gene_types_dict)
-                # Filter out NA gene types
-                valid_mask = metadata['gene_type'].notna()
-                if valid_mask.sum() > 0:
-                    labels = metadata[valid_mask]['gene_type'].tolist()
-                    embeddings = embeddings[valid_mask]
-                    tag_suffix = "by_gene_type"
-                else:
-                    labels = metadata['gene_name'].tolist()
-                    tag_suffix = "by_gene_name"
+    def _log_wandb_embeddings(self, embeddings: torch.Tensor, metadata: pd.DataFrame, 
+                             node_type: str, epoch: int, prefix: str = ""):
+        """Log high-dimensional embeddings to Weights & Biases."""
+        # Prepare data for wandb logging
+        if self.gene_types_dict and 'gene_name' in metadata.columns:
+            metadata['gene_type'] = metadata['gene_name'].map(self.gene_types_dict)
+            # Filter out NA gene types
+            valid_mask = metadata['gene_type'].notna()
+            if valid_mask.sum() > 0:
+                filtered_metadata = metadata[valid_mask]
+                filtered_embeddings = embeddings[valid_mask]
+                color_column = 'gene_type'
             else:
-                labels = metadata['gene_name'].tolist()
-                tag_suffix = "by_gene_name"
-        else:  # bd
-            labels = metadata['cell_type'].tolist()
-            tag_suffix = "by_cell_type"
+                filtered_metadata = metadata
+                filtered_embeddings = embeddings
+                color_column = 'gene_name'
+        else:
+            filtered_metadata = metadata
+            filtered_embeddings = embeddings
+            color_column = 'gene_name'
         
-        # Log to TensorBoard projector
-        tag = f"{prefix}projector/{node_type}_{tag_suffix}"
-        writer.add_embedding(
-            mat=embeddings,
-            metadata=labels,
-            global_step=epoch,
-            tag=tag
+        # Create a table with embeddings and metadata for wandb
+        embedding_table = wandb.Table(
+            columns=['embedding_dim_' + str(i) for i in range(filtered_embeddings.shape[1])] + 
+                   ['gene_name', color_column] + 
+                   (['x', 'y'] if 'x' in filtered_metadata.columns and 'y' in filtered_metadata.columns else [])
         )
+        
+        # Add rows to the table
+        for i, (_, row) in enumerate(filtered_metadata.iterrows()):
+            table_row = list(filtered_embeddings[i].cpu().numpy()) + [row['gene_name'], row[color_column]]
+            if 'x' in filtered_metadata.columns and 'y' in filtered_metadata.columns:
+                table_row.extend([row['x'], row['y']])
+            embedding_table.add_data(*table_row)
+        
+        # Log the table to wandb
+        wandb.log({
+            f"{prefix}embeddings/{node_type}_embeddings_table": embedding_table,
+            "epoch": epoch
+        })
     
-    def _log_embedding_plots(self, writer, reduced_embeddings: np.ndarray, metadata: pd.DataFrame,
-                           node_type: str, epoch: int, prefix: str = ""):
-        """Log 2D embedding visualization plots as images to TensorBoard."""
+    def _log_wandb_plots(self, reduced_embeddings: np.ndarray, metadata: pd.DataFrame,
+                        node_type: str, epoch: int, prefix: str = ""):
+        """Log 2D embedding visualization plots as images to Weights & Biases."""
         
         # Create plots for different metadata categories
         plots_to_create = []
         
+        # Only process tx nodes
         if node_type == 'tx':
             # Add gene type plot if available
             if self.gene_types_dict and 'gene_name' in metadata.columns:
@@ -343,29 +476,28 @@ class EmbeddingVisualizationCallback(Callback):
                     'title': f'{prefix}Transcript Embeddings by Gene Name - Epoch {epoch}',
                     'tag': f'{prefix}plots/{node_type}_by_gene_name'
                 })
-        else:  # bd
-            plots_to_create.append({
-                'data': (reduced_embeddings, metadata),
-                'color_column': 'cell_type',
-                'title': f'{prefix}Cell Embeddings by Cell Type - Epoch {epoch}',
-                'tag': f'{prefix}plots/{node_type}_by_cell_type'
-            })
-        
-
+        else:
+            # Skip bd nodes
+            return
         
         # Create and log each plot
         for plot_info in plots_to_create:
             try:
                 plot_image = self._create_plot_image(plot_info)
-                writer.add_image(plot_info['tag'], plot_image, global_step=epoch, dataformats='HWC')
+                # Convert numpy array to PIL Image for wandb
+                pil_image = Image.fromarray(plot_image.astype('uint8'))
+                wandb.log({
+                    plot_info['tag']: wandb.Image(pil_image, caption=plot_info['title']),
+                    "epoch": epoch
+                })
             except Exception as e:
                 print(f"Error creating plot {plot_info['tag']}: {str(e)}")
         
         # Add spatial plots if spatial coordinates are available
-        self._log_spatial_plots(writer, reduced_embeddings, metadata, node_type, epoch, prefix)
+        self._log_wandb_spatial_plots(reduced_embeddings, metadata, node_type, epoch, prefix)
     
     def _create_plot_image(self, plot_info: Dict) -> np.ndarray:
-        """Create a plot image as numpy array for TensorBoard logging."""
+        """Create a plot image as numpy array for wandb logging."""
         reduced_embeddings, metadata = plot_info['data']
         color_column = plot_info['color_column']
         title = plot_info['title']
@@ -381,16 +513,25 @@ class EmbeddingVisualizationCallback(Callback):
                       c=pd.Categorical(metadata[color_column]).codes, 
                       s=self.config.point_size, alpha=self.config.alpha, cmap='tab20')
         else:
-            # Use discrete colors
-            colors = plt.cm.Set3(np.linspace(0, 1, len(unique_values)))
-            for value, color in zip(unique_values, colors):
+            # Use colors from loaded palette for gene types
+            if color_column == 'gene_type':
+                # Sort values for meaningful ordering
+                sorted_values = sorted(unique_values)
+                colors = self._get_gene_type_colors(sorted_values)
+                values_to_plot = sorted_values
+            else:
+                # Use default colors for other columns
+                colors = plt.cm.Set3(np.linspace(0, 1, len(unique_values)))
+                values_to_plot = unique_values
+                
+            for value, color in zip(values_to_plot, colors):
                 mask = metadata[color_column] == value
                 ax.scatter(reduced_embeddings[mask, 0], reduced_embeddings[mask, 1],
-                          c=[color], label=str(value), s=self.config.point_size, alpha=self.config.alpha)
+                          c=color, label=str(value), s=self.config.point_size, alpha=self.config.alpha)
             
             # Add legend if not too many items
             if len(unique_values) <= 15:
-                ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
+                ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8, markerscale=6.0)
         
         ax.set_xlabel(f'{self.config.method.upper()} 1')
         ax.set_ylabel(f'{self.config.method.upper()} 2')
@@ -412,121 +553,66 @@ class EmbeddingVisualizationCallback(Callback):
         
         return img_array
     
-    def _log_spatial_plots(self, writer, reduced_embeddings: np.ndarray, metadata: pd.DataFrame,
-                          node_type: str, epoch: int, prefix: str = ""):
-        """Log spatial-based visualization plots to TensorBoard."""
-        if 'x' not in metadata.columns or 'y' not in metadata.columns:
-            return  # No spatial coordinates available
+    def _log_wandb_spatial_plots(self, reduced_embeddings: np.ndarray, metadata: pd.DataFrame,
+                                node_type: str, epoch: int, prefix: str = ""):
+        """Log spatial-based visualization plots to Weights & Biases for tx nodes only."""
+        if node_type != 'tx' or 'x' not in metadata.columns or 'y' not in metadata.columns:
+            return  # Only process tx nodes with spatial coordinates
             
         try:
-            # Calculate spatial metrics
+            # Get spatial coordinates
             x_coords = metadata['x'].values
             y_coords = metadata['y'].values
             
-            # Metric 1: Distance from origin
-            distance_from_origin = np.sqrt(x_coords**2 + y_coords**2)
-            
-            # Metric 2: Spatial quadrants
-            x_median = np.median(x_coords)
-            y_median = np.median(y_coords)
-            quadrants = []
-            for x, y in zip(x_coords, y_coords):
-                if x >= x_median and y >= y_median:
-                    quadrants.append('Q1 (Top-Right)')
-                elif x < x_median and y >= y_median:
-                    quadrants.append('Q2 (Top-Left)')
-                elif x < x_median and y < y_median:
-                    quadrants.append('Q3 (Bottom-Left)')
-                else:
-                    quadrants.append('Q4 (Bottom-Right)')
-            
-            # Create spatial distance plot
-            spatial_distance_plot = self._create_spatial_distance_plot(
-                reduced_embeddings, distance_from_origin, 
-                f'{prefix}{node_type.upper()} Embeddings by Spatial Distance - Epoch {epoch}'
-            )
-            writer.add_image(
-                f'{prefix}plots/{node_type}_by_spatial_distance', 
-                spatial_distance_plot, 
-                global_step=epoch, 
-                dataformats='HWC'
+            # Create spatial coordinates plot with two-channel coloring
+            spatial_coords_plot = self._create_spatial_coordinates_plot(
+                reduced_embeddings, x_coords, y_coords,
+                f'{prefix}TX Embeddings by Spatial Coordinates - Epoch {epoch}'
             )
             
-            # Create spatial quadrants plot
-            spatial_quadrants_plot = self._create_spatial_quadrants_plot(
-                reduced_embeddings, quadrants,
-                f'{prefix}{node_type.upper()} Embeddings by Spatial Quadrants - Epoch {epoch}'
-            )
-            writer.add_image(
-                f'{prefix}plots/{node_type}_by_spatial_quadrants', 
-                spatial_quadrants_plot, 
-                global_step=epoch, 
-                dataformats='HWC'
-            )
+            # Convert to PIL Image and log to wandb
+            pil_image = Image.fromarray(spatial_coords_plot.astype('uint8'))
+            wandb.log({
+                f'{prefix}plots/{node_type}_by_spatial_coordinates': wandb.Image(
+                    pil_image, 
+                    caption=f'{prefix}TX Embeddings by Spatial Coordinates - Epoch {epoch}'
+                ),
+                "epoch": epoch
+            })
             
         except Exception as e:
             print(f"Error creating spatial plots for {node_type}: {str(e)}")
     
-    def _create_spatial_distance_plot(self, reduced_embeddings: np.ndarray, 
-                                    distance_values: np.ndarray, title: str) -> np.ndarray:
-        """Create spatial distance plot for TensorBoard."""
+    def _create_spatial_coordinates_plot(self, reduced_embeddings: np.ndarray, 
+                                       x_coords: np.ndarray, y_coords: np.ndarray, title: str) -> np.ndarray:
+        """Create spatial coordinates plot with two-channel coloring for wandb."""
         fig, ax = plt.subplots(figsize=(10, 8))
+        
+        # Normalize coordinates to [0, 1] for color mapping
+        x_normalized = (x_coords - x_coords.min()) / (x_coords.max() - x_coords.min()) if x_coords.max() != x_coords.min() else np.zeros_like(x_coords)
+        y_normalized = (y_coords - y_coords.min()) / (y_coords.max() - y_coords.min()) if y_coords.max() != y_coords.min() else np.zeros_like(y_coords)
+        
+        # Create RGB colors using x and y coordinates
+        # Red channel: x coordinate, Green channel: y coordinate, Blue channel: fixed
+        rgb_colors = np.column_stack([x_normalized, y_normalized, np.full_like(x_normalized, 0.5)])
         
         scatter = ax.scatter(
             reduced_embeddings[:, 0], 
             reduced_embeddings[:, 1],
-            c=distance_values,
+            c=rgb_colors,
             s=self.config.point_size,
-            alpha=self.config.alpha,
-            cmap='viridis'
+            alpha=self.config.alpha
         )
         
-        # Add colorbar
-        cbar = plt.colorbar(scatter, ax=ax)
-        cbar.set_label('Distance from Origin (µm)', rotation=270, labelpad=20)
-        
         ax.set_xlabel(f'{self.config.method.upper()} 1')
         ax.set_ylabel(f'{self.config.method.upper()} 2')
         ax.set_title(title, fontsize=12)
         ax.grid(True, alpha=0.3)
         
-        plt.tight_layout()
-        
-        # Convert to image array
-        buf = io.BytesIO()
-        plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
-        buf.seek(0)
-        img = Image.open(buf)
-        img_array = np.array(img)
-        plt.close(fig)
-        buf.close()
-        
-        return img_array
-    
-    def _create_spatial_quadrants_plot(self, reduced_embeddings: np.ndarray, 
-                                     quadrants: List[str], title: str) -> np.ndarray:
-        """Create spatial quadrants plot for TensorBoard."""
-        fig, ax = plt.subplots(figsize=(10, 8))
-        
-        unique_quadrants = sorted(set(quadrants))
-        colors = plt.cm.Set1(np.linspace(0, 1, len(unique_quadrants)))
-        
-        for quadrant, color in zip(unique_quadrants, colors):
-            mask = np.array(quadrants) == quadrant
-            ax.scatter(
-                reduced_embeddings[mask, 0], 
-                reduced_embeddings[mask, 1],
-                c=[color],
-                s=self.config.point_size,
-                alpha=self.config.alpha,
-                label=quadrant
-            )
-        
-        ax.set_xlabel(f'{self.config.method.upper()} 1')
-        ax.set_ylabel(f'{self.config.method.upper()} 2')
-        ax.set_title(title, fontsize=12)
-        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
-        ax.grid(True, alpha=0.3)
+        # Add a custom colorbar explanation
+        ax.text(0.02, 0.98, 'Color: Red=X coord, Green=Y coord', 
+                transform=ax.transAxes, verticalalignment='top', fontsize=10,
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
         
         plt.tight_layout()
         
@@ -564,7 +650,7 @@ class EmbeddingComparisonCallback(Callback):
                  dataloader,
                  transcripts_df: pd.DataFrame,
                  comparison_epochs: List[int],
-                 max_batches_per_comparison: int = 80,
+                 max_batches_per_comparison: int = 40,
                  gene_types_dict: Optional[Dict] = None,
                  cell_types_dict: Optional[Dict] = None,
                  config: Optional[EmbeddingVisualizationConfig] = None):
@@ -599,6 +685,35 @@ class EmbeddingComparisonCallback(Callback):
         
         # Store embeddings for comparison
         self.stored_embeddings = {}
+        
+        # Load cell type color palette
+        self.cell_type_color_palette = load_cell_type_color_palette()
+    
+    def _get_gene_type_colors(self, gene_types: List[str]) -> List[str]:
+        """
+        Get colors for gene types using the loaded palette.
+        
+        Args:
+            gene_types: List of gene type names
+            
+        Returns:
+            List of color codes corresponding to the gene types
+        """
+        colors = []
+        fallback_colors = [
+            '#999999', '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728',
+            '#e377c2', '#7f7f7f', '#bcbd22', '#aec7e8', '#17becf'
+        ]
+        
+        fallback_index = 0
+        for gene_type in gene_types:
+            if gene_type in self.cell_type_color_palette:
+                colors.append(self.cell_type_color_palette[gene_type])
+            else:
+                colors.append(fallback_colors[fallback_index % len(fallback_colors)])
+                fallback_index += 1
+                
+        return colors
     
     def on_train_epoch_end(self, trainer, pl_module):
         """Store embeddings for comparison epochs."""
@@ -636,12 +751,9 @@ class EmbeddingComparisonCallback(Callback):
             save_dir = log_dir / "embedding_comparisons"
             save_dir.mkdir(parents=True, exist_ok=True)
             
-            # Create comparison plots for each node type
-            for node_type in ['tx', 'bd']:
-                if node_type not in self.stored_embeddings[list(self.stored_embeddings.keys())[0]]:
-                    continue
-                    
-                self._create_comparison_plot(node_type, save_dir)
+            # Create comparison plots only for tx nodes
+            if 'tx' in self.stored_embeddings[list(self.stored_embeddings.keys())[0]]:
+                self._create_comparison_plot('tx', save_dir)
                 
         except Exception as e:
             print(f"Error creating comparison visualizations: {str(e)}")
@@ -665,32 +777,34 @@ class EmbeddingComparisonCallback(Callback):
                 node_type=node_type
             )
             
-            # Determine color scheme
-            if node_type == 'tx':
-                if self.gene_types_dict and 'gene_name' in metadata.columns:
-                    metadata['gene_type'] = metadata['gene_name'].map(self.gene_types_dict)
-                    # Don't fill NA values - filter them out instead
-                    valid_gene_type_mask = metadata['gene_type'].notna()
-                    if valid_gene_type_mask.sum() > 0:
-                        metadata = metadata[valid_gene_type_mask]
-                        reduced_embeddings = reduced_embeddings[valid_gene_type_mask]
-                        color_column = 'gene_type'
-                    else:
-                        color_column = 'gene_name'
+            # Determine color scheme (only for tx nodes)
+            if self.gene_types_dict and 'gene_name' in metadata.columns:
+                metadata['gene_type'] = metadata['gene_name'].map(self.gene_types_dict)
+                # Don't fill NA values - filter them out instead
+                valid_gene_type_mask = metadata['gene_type'].notna()
+                if valid_gene_type_mask.sum() > 0:
+                    metadata = metadata[valid_gene_type_mask]
+                    reduced_embeddings = reduced_embeddings[valid_gene_type_mask]
+                    color_column = 'gene_type'
                 else:
                     color_column = 'gene_name'
             else:
-                color_column = 'cell_type'
+                color_column = 'gene_name'
             
             # Plot
             ax = axes[i]
-            unique_values = metadata[color_column].unique()
-            colors = plt.cm.Set3(np.linspace(0, 1, len(unique_values)))
+            unique_values = sorted(metadata[color_column].unique())
+            
+            # Use colors from loaded palette for gene types
+            if color_column == 'gene_type':
+                colors = self._get_gene_type_colors(unique_values)
+            else:
+                colors = plt.cm.Set3(np.linspace(0, 1, len(unique_values)))
             
             for value, color in zip(unique_values, colors):
                 mask = metadata[color_column] == value
                 ax.scatter(reduced_embeddings[mask, 0], reduced_embeddings[mask, 1],
-                          c=[color], label=value, s=self.config.point_size, alpha=self.config.alpha)
+                          c=color, label=value, s=self.config.point_size, alpha=self.config.alpha)
             
             ax.set_title(f'Epoch {epoch}')
             ax.set_xlabel(f'{self.config.method.upper()} 1')
@@ -699,7 +813,7 @@ class EmbeddingComparisonCallback(Callback):
             
             # Add legend only to the last subplot
             if i == n_epochs - 1:
-                ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+                ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', markerscale=6.0)
         
         plt.suptitle(f'{node_type.upper()} Embedding Evolution During Training')
         plt.tight_layout()

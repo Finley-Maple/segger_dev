@@ -10,6 +10,13 @@ from pathlib import Path
 import argparse
 import torch
 import pandas as pd
+import glob
+import pickle
+import os
+import numpy as np
+from dataclasses import dataclass
+from typing import Optional, Dict, Any, List
+import time
 
 # Add project root to Python path
 project_root = Path(__file__).parent.parent.parent
@@ -21,326 +28,178 @@ from torch_geometric.nn import to_hetero
 from segger.training.train import LitSegger
 from visualization.embedding_visualization import (
     visualize_embeddings_from_model,
-    visualize_spatial_from_dataloader,
     EmbeddingVisualizationConfig,
     EmbeddingExtractor,
     EmbeddingVisualizer
 )
 from visualization.embedding_callback import create_embedding_callbacks
+from utils.utils import setup_model_and_data, load_metadata, create_combined_dataloader, clear_metadata_cache, get_metadata_cache_path, VisualizationConfig
 
 # Configure paths (adjust these to your setup)
 DATA_DIR = Path('/dkfz/cluster/gpu/data/OE0606/fengyun')
 
-
-def post_training_visualization():
+def post_training_visualization(config: VisualizationConfig, force_reload_metadata: bool = False, spatial_region: list = None, min_transcripts: int = 1):
     """
-    Example of how to visualize embeddings from a trained model.
+    Example of how to visualize embeddings from a trained model using spatial region batches.
     """
     print("=== Post-Training Embedding Visualization Example ===")
     
-    # Configuration
-    dataset = 'pancreas'  # or 'colon'
-    model_type = 'no_seq'
-    model_version = 1
+    # Load model and data
+    model, dm = setup_model_and_data(config)
     
-    # Set up paths
-    model_dir_path = DATA_DIR / 'segger_model' / f'segger_{dataset}_{model_type}'
-    model_path = Path(model_dir_path) / "lightning_logs" / f"version_{model_version}"
-    XENIUM_DATA_DIR = DATA_DIR / 'xenium_data' / f'xenium_{dataset}'
-    SEGGER_DATA_DIR = DATA_DIR / 'segger_data' / f'segger_{dataset}_{model_type}'
+    # Load metadata
+    transcripts, gene_types_dict, cell_types_dict = load_metadata(config, config.load_scrna_gene_types, force_reload_metadata)
     
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    
-    # Load data module
-    dm = SeggerDataModule(
-        data_dir=SEGGER_DATA_DIR,
-        batch_size=3,
-        num_workers=2,
-    )
-    dm.setup()
-    
-    # Set up model
-    if model_type == 'no_seq':
-        num_tx_tokens = 500
-    else:
-        num_tx_tokens = dm.train[0].x_dict["tx"].shape[1]
-    
-    model = Segger(
-        num_tx_tokens=num_tx_tokens,
-        init_emb=8,
-        hidden_channels=64,
-        out_channels=16,
-        heads=4,
-        num_mid_layers=3,
-    )
-    model = to_hetero(model, (["tx", "bd"], [("tx", "belongs", "bd"), ("tx", "neighbors", "tx")]), aggr="sum")
-    
-    # Load trained model
-    ls = LitSegger(model=model).to(device)
-    if dataset == 'pancreas':
-        ckpt_path = model_path / "checkpoints" / "epoch=99-step=48300.ckpt"
-    else:  # colon
-        ckpt_path = model_path / "checkpoints" / "epoch=79-step=70160.ckpt"
-    
-    if ckpt_path.exists():
-        ckpt = torch.load(ckpt_path, map_location=device)
-        ls.load_state_dict(ckpt["state_dict"], strict=True)
-    else:
-        print(f"Checkpoint not found at {ckpt_path}")
-        return
-    
-    ls.eval()
-    
-    # Load transcripts and metadata
-    transcripts = pd.read_parquet(XENIUM_DATA_DIR / 'transcripts.parquet')
-    
-    gene_types_dict = None
-    cell_types_dict = None
-    if dataset == 'pancreas':
-        # Load gene and cell type information
-        gene_types = pd.read_excel(XENIUM_DATA_DIR / 'gene_groups_modified.xlsx')
-        gene_types_dict = dict(zip(gene_types['gene'], gene_types['group']))
-        
-        cell_types = pd.read_csv(XENIUM_DATA_DIR / 'cell_groups.csv')
-        cell_types_dict = dict(zip(cell_types['cell_id'], cell_types['group']))
-        
-        # Merge Endocrine 1 and Endocrine 2 into Endocrine
-        # Merge Tumor Cells and CFTR- Tumor Cells into Tumor Cells
-        for k, v in cell_types_dict.items():
-            if v in ["Endocrine 1", "Endocrine 2"]:
-                cell_types_dict[k] = "Endocrine"
-            elif v in ["Tumor Cells", "CFTR- Tumor Cells"]:
-                cell_types_dict[k] = "Tumor Cells"
-    
-    # Create visualization config
-    config = EmbeddingVisualizationConfig(
-        method='umap',  # Try 'tsne' or 'pca' as well
-        n_components=2,
-        figsize=(12, 8),
-        point_size=3.0,
-        alpha=0.7,
-        max_points_per_type=1000,  # Subsample for better visualization
-        subsample_method='balanced',
-        umap_n_neighbors=15,
-        umap_min_dist=0.1
+    # Create embedding visualization config
+    embedding_config = EmbeddingVisualizationConfig(
+        method=config.embedding_method,
+        n_components=config.n_components,
+        figsize=config.figsize,
+        point_size=config.point_size,
+        alpha=config.alpha,
+        max_points_per_type=config.max_points_per_type,
+        subsample_method=config.subsample_method,
+        umap_n_neighbors=config.umap_n_neighbors,
+        umap_min_dist=config.umap_min_dist
     )
     
     # Set up save directory
-    save_dir = Path('./embedding_visualization_results') / dataset / model_type
+    save_dir = Path('./embedding_visualization_results') / config.dataset / config.model_type
+    if config.align_loss:
+        save_dir = save_dir / 'align_loss'
     save_dir.mkdir(parents=True, exist_ok=True)
     
     print(f"Generating embeddings visualizations...")
-    print(f"Dataset: {dataset}")
-    print(f"Model type: {model_type}")
-    print(f"Visualization method: {config.method}")
+    print(f"Dataset: {config.dataset}")
+    print(f"Model type: {config.model_type}")
+    print(f"Align loss: {config.align_loss}")
+    print(f"Visualization method: {config.embedding_method}")
     print(f"Save directory: {save_dir}")
     
     # Generate visualizations
     try:
+        if spatial_region:
+            # Use spatial filtering to get batches
+            from utils.spatial_batch_utils import get_spatial_combined_dataloader
+            x_range = [spatial_region[0], spatial_region[1]]
+            y_range = [spatial_region[2], spatial_region[3]]
+            print(f"Using spatial filtering: x={x_range}, y={y_range}, min_transcripts={min_transcripts}")
+            combined_dataloader = get_spatial_combined_dataloader(
+                dm, x_range=x_range, y_range=y_range, min_transcripts=min_transcripts
+            )
+        else:
+            # Load batch indices from CSV files (original behavior)
+            batch_indices = load_batch_indices_from_csvs()
+            combined_dataloader = create_combined_dataloader(dm, batch_indices)
+        
+        if not combined_dataloader:
+            print("Warning: No batches found, falling back to random selection")
+            batch_count = 40
+            batch_ids = np.random.choice(len(dm.train), batch_count, replace=False)
+            combined_dataloader = dm.train[batch_ids]
+            print(f"Using {len(batch_ids)} random batches from training set")
+        
         plots = visualize_embeddings_from_model(
-            model=ls.model,
-            dataloader=dm.train[:40],  # Use first 10 batches
+            model=model.model,
+            dataloader=combined_dataloader,
             save_dir=save_dir,
             transcripts_df=transcripts,
             gene_types_dict=gene_types_dict,
             cell_types_dict=cell_types_dict,
-            max_batches=40,
-            config=config
+            max_batches=len(combined_dataloader),
+            config=embedding_config
         )
         
         print(f"\nVisualization complete! Generated plots:")
         for plot_name, plot_path in plots.items():
             print(f"  - {plot_name}: {plot_path}")
-            
+            # Highlight the interactive dashboard
+        if 'interactive_dashboard' in plots:
+            print(f"\n🎯 INTERACTIVE DASHBOARD CREATED:")
+            print(f"   📊 {plots['interactive_dashboard']}")
+            print(f"   💡 Open this HTML file in your browser to test the interactive features!")
+            print(f"   🎨 Features: Lasso selection, synchronized highlighting across plots")
+            print(f"   📁 Full path: {Path(plots['interactive_dashboard']).absolute()}")
     except Exception as e:
         print(f"Error during visualization: {str(e)}")
         import traceback
         traceback.print_exc()
 
 
-def spatial_visualization_by_batch():
-    """
-    Example of how to visualize spatial distribution of transcripts and boundaries.
-    Creates two combined plots: one for all transcripts (tx) and one for all boundaries (bd),
-    with points colored by batch index.
-    """
-    print("=== Spatial Visualization by Batch Example ===")
-    
-    # Configuration
-    dataset = 'pancreas'  # or 'colon'
-    model_type = 'no_seq'
-    
-    # Set up paths
-    XENIUM_DATA_DIR = DATA_DIR / 'xenium_data' / f'xenium_{dataset}'
-    SEGGER_DATA_DIR = DATA_DIR / 'segger_data' / f'segger_{dataset}_{model_type}'
-    
-    # Load data module
-    dm = SeggerDataModule(
-        data_dir=SEGGER_DATA_DIR,
-        batch_size=3,
-        num_workers=2,
-    )
-    dm.setup()
-    
-    # Load transcripts and metadata
-    transcripts = pd.read_parquet(XENIUM_DATA_DIR / 'transcripts.parquet')
-    
-    gene_types_dict = None
-    cell_types_dict = None
-    if dataset == 'pancreas':
-        # Load gene and cell type information
-        gene_types = pd.read_excel(XENIUM_DATA_DIR / 'gene_groups_modified.xlsx')
-        gene_types_dict = dict(zip(gene_types['gene'], gene_types['group']))
-        
-        cell_types = pd.read_csv(XENIUM_DATA_DIR / 'cell_groups.csv')
-        cell_types_dict = dict(zip(cell_types['cell_id'], cell_types['group']))
-        
-        # Merge Endocrine 1 and Endocrine 2 into Endocrine
-        # Merge Tumor Cells and CFTR- Tumor Cells into Tumor Cells
-        for k, v in cell_types_dict.items():
-            if v in ["Endocrine 1", "Endocrine 2"]:
-                cell_types_dict[k] = "Endocrine"
-            elif v in ["Tumor Cells", "CFTR- Tumor Cells"]:
-                cell_types_dict[k] = "Tumor Cells"
-    
-    # Create visualization config
-    config = EmbeddingVisualizationConfig(
-        figsize=(10, 8),
-        spatial_alpha=0.7,
-        spatial_tx_size=8.0,
-        spatial_bd_size=15.0,
-        spatial_max_points_per_gene_type=500,  # Subsample for better visualization
-        save_format='png',
-        dpi=300
-    )
-    
-    # Set up save directory
-    save_dir = Path('./spatial_visualization_results') / dataset / model_type
-    save_dir.mkdir(parents=True, exist_ok=True)
-    
-    print(f"Generating spatial visualizations...")
-    print(f"Dataset: {dataset}")
-    print(f"Model type: {model_type}")
-    print(f"Save directory: {save_dir}")
-    
-    # Generate visualizations
-    try:
-        plots = visualize_spatial_from_dataloader(
-            dataloader=dm.train,
-            save_dir=save_dir,
-            transcripts_df=transcripts,
-            gene_types_dict=gene_types_dict,
-            cell_types_dict=cell_types_dict,
-            max_batches=80,
-            max_batches_to_plot=80,
-            config=config,
-            combined_plot=True  # Create combined plots colored by batch index
-        )
-        
-        print(f"\nSpatial visualization complete! Generated plots:")
-        for plot_name, plot_path in plots.items():
-            print(f"  - {plot_name}: {plot_path}")
-            
-    except Exception as e:
-        print(f"Error during spatial visualization: {str(e)}")
-        import traceback
-        traceback.print_exc()
-
-
-def spatial_visualization_separate_batches():
-    """
-    Example of how to visualize spatial distribution with separate plots for each batch.
-    Creates individual plots for each batch showing transcripts and boundaries.
-    """
-    print("=== Spatial Visualization Separate Batches Example ===")
-    
-    # Configuration
-    dataset = 'pancreas'  # or 'colon'
-    model_type = 'no_seq'
-    
-    # Set up paths
-    XENIUM_DATA_DIR = DATA_DIR / 'xenium_data' / f'xenium_{dataset}'
-    SEGGER_DATA_DIR = DATA_DIR / 'segger_data' / f'segger_{dataset}_{model_type}'
-    
-    # Load data module
-    dm = SeggerDataModule(
-        data_dir=SEGGER_DATA_DIR,
-        batch_size=3,
-        num_workers=2,
-    )
-    dm.setup()
-    
-    # Load transcripts and metadata
-    transcripts = pd.read_parquet(XENIUM_DATA_DIR / 'transcripts.parquet')
-    
-    gene_types_dict = None
-    cell_types_dict = None
-    if dataset == 'pancreas':
-        # Load gene and cell type information
-        gene_types = pd.read_excel(XENIUM_DATA_DIR / 'gene_groups_modified.xlsx')
-        gene_types_dict = dict(zip(gene_types['gene'], gene_types['group']))
-        
-        cell_types = pd.read_csv(XENIUM_DATA_DIR / 'cell_groups.csv')
-        cell_types_dict = dict(zip(cell_types['cell_id'], cell_types['group']))
-        
-        # Merge Endocrine 1 and Endocrine 2 into Endocrine
-        # Merge Tumor Cells and CFTR- Tumor Cells into Tumor Cells
-        for k, v in cell_types_dict.items():
-            if v in ["Endocrine 1", "Endocrine 2"]:
-                cell_types_dict[k] = "Endocrine"
-            elif v in ["Tumor Cells", "CFTR- Tumor Cells"]:
-                cell_types_dict[k] = "Tumor Cells"
-    
-    # Create visualization config
-    config = EmbeddingVisualizationConfig(
-        figsize=(10, 8),
-        spatial_alpha=0.7,
-        spatial_tx_size=8.0,
-        spatial_bd_size=15.0,
-        spatial_max_points_per_gene_type=500,
-        save_format='png',
-        dpi=300
-    )
-    
-    # Set up save directory
-    save_dir = Path('./spatial_visualization_results') / dataset / model_type / 'separate_batches'
-    save_dir.mkdir(parents=True, exist_ok=True)
-    
-    print(f"Generating separate spatial visualizations...")
-    print(f"Dataset: {dataset}")
-    print(f"Model type: {model_type}")
-    print(f"Save directory: {save_dir}")
-    
-    # Generate separate visualizations
-    try:
-        plots = visualize_spatial_from_dataloader(
-            dataloader=dm.train,
-            save_dir=save_dir,
-            transcripts_df=transcripts,
-            gene_types_dict=gene_types_dict,
-            cell_types_dict=cell_types_dict,
-            max_batches=5,  # Process fewer batches for separate plots
-            max_batches_to_plot=5,
-            config=config,
-            combined_plot=False  # Create separate plots for each batch
-        )
-        
-        print(f"\nSeparate spatial visualization complete! Generated plots:")
-        for plot_name, plot_path in plots.items():
-            print(f"  - {plot_name}: {plot_path}")
-            
-    except Exception as e:
-        print(f"Error during separate spatial visualization: {str(e)}")
-        import traceback
-        traceback.print_exc()
-
-
 def main():
-    # Run embedding visualization
-    post_training_visualization()
+    """Main function with example configurations."""
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Process dataset with specified model type')
+    parser.add_argument('--dataset', type=str, choices=['colon', 'CRC', 'pancreas', 'breast'], required=True, default='colon',
+                       help='Dataset: "colon", "CRC", or "pancreas"')
+    parser.add_argument('--model_type', type=str, choices=['seq', 'no_seq'], required=True, default='seq',
+                       help='Model type: "seq" or "no_seq"')
+    parser.add_argument('--align_loss', action='store_true',
+                        help='Align loss: if True, use align loss model directories')
+    parser.add_argument('--force_reload_metadata', action='store_true',
+                        help='Force reload metadata from source files, ignoring cache')
+    parser.add_argument('--clear_cache', action='store_true',
+                        help='Clear metadata cache and exit')
+    parser.add_argument('--spatial_region', nargs=4, type=float, metavar=('X_MIN', 'X_MAX', 'Y_MIN', 'Y_MAX'),
+                        help='Spatial region coordinates to be visualized: x_min x_max y_min y_max (e.g., --spatial_region 2000 3000 2000 2500)')
+    parser.add_argument('--min_transcripts', type=int, default=1,
+                        help='Minimum number of transcripts required in spatial region (default: 1)')
+    args = parser.parse_args()
     
-    # Run combined spatial visualization (all batches in 2 plots colored by batch)
-    # spatial_visualization_by_batch()
+    # Handle cache clearing
+    if args.clear_cache:
+        clear_metadata_cache(args.dataset)
+        return
+    
+    load_scrna_gene_types = True if args.model_type == 'seq' else False
+    
+    config = VisualizationConfig(
+        dataset=args.dataset,
+        model_type=args.model_type,
+        align_loss=args.align_loss,
+        load_scrna_gene_types=load_scrna_gene_types,
+        max_points_per_type=1000,
+        embedding_method='pca'
+    )
+    
+    # # Optimize memory usage for align loss models
+    # if config.align_loss:
+    #     config.max_points_per_type = 500  # Reduce from 1000 to 500
+    #     config.spatial_max_points_per_gene_type = 200  # Reduce from 500 to 200
+    #     print(f"  Optimized settings for align loss: max_points_per_type={config.max_points_per_type}, spatial_max_points_per_gene_type={config.spatial_max_points_per_gene_type}")
+    
+    print(f"Running visualizations with configuration:")
+    print(f"  Dataset: {config.dataset}")
+    print(f"  Model type: {config.model_type}")
+    print(f"  Align loss: {config.align_loss}")
+    print(f"  Embedding method: {config.embedding_method}")
+    print(f"  Load scRNAseq gene types: {config.load_scrna_gene_types}")
+    print(f"  Force reload metadata: {args.force_reload_metadata}")
+    print(f"  Output directory: ./embedding_visualization_results/{config.dataset}/{config.model_type}{'/' + 'align_loss' if config.align_loss else ''}")
+    if args.spatial_region:
+        print(f"  Spatial region: x=[{args.spatial_region[0]}, {args.spatial_region[1]}], y=[{args.spatial_region[2]}, {args.spatial_region[3]}]")
+        print(f"  Min transcripts: {args.min_transcripts}")
+    if config.load_scrna_gene_types:
+        print(f"  → Will generate tx_embeddings_by_gene_type.png with scRNAseq cell types!")
+    
+    # Show cache information
+    cache_path = get_metadata_cache_path(config, config.load_scrna_gene_types)
+    if cache_path.exists() and not args.force_reload_metadata:
+        cache_age = (pd.Timestamp.now() - pd.Timestamp.fromtimestamp(cache_path.stat().st_mtime)).total_seconds()
+        print(f"  📁 Metadata cache available: {cache_path} (age: {cache_age/60:.1f} minutes)")
+    else:
+        print(f"  📁 Metadata cache: {cache_path} ({'will be created' if not args.force_reload_metadata else 'disabled'})")
+    
+    # Run embedding visualization
+    try:
+        post_training_visualization(
+            config, 
+            args.force_reload_metadata, 
+            spatial_region=args.spatial_region,
+            min_transcripts=args.min_transcripts
+        )
+    except Exception as e:
+        print(f"Error in embedding visualization: {e}")
 
 
 if __name__ == '__main__':

@@ -209,3 +209,8 @@ intermediate_data/
 .scripts/*
 
 models/*
+
+# visualization results
+*.png
+*.pdf
+*.html
