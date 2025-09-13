@@ -36,10 +36,20 @@ except ImportError:
 try:
     from sklearn.manifold import TSNE
     from sklearn.decomposition import PCA
+    from sklearn.neighbors import NearestNeighbors
 except ImportError:
     warnings.warn("scikit-learn not installed. Please install with: pip install scikit-learn")
     TSNE = None
     PCA = None
+    NearestNeighbors = None
+
+try:
+    import leidenalg
+    import igraph as ig
+except ImportError:
+    warnings.warn("leidenalg or igraph not installed. Please install with: pip install leidenalg python-igraph")
+    leidenalg = None
+    ig = None
 
 try:
     import plotly.graph_objects as go
@@ -55,7 +65,7 @@ except ImportError:
 class EmbeddingVisualizationConfig:
     """Configuration for embedding visualization."""
     method: str = 'umap'  # 'umap', 'tsne', 'pca'
-    n_components: int = 3
+    n_components: int = 2
     random_state: int = 42
     figsize: Tuple[int, int] = (12, 8)
     dpi: int = 300
@@ -76,19 +86,16 @@ class EmbeddingVisualizationConfig:
     # Sampling for large datasets
     max_points_per_type: int = 10000
     subsample_method: str = 'random'  # 'random', 'balanced'
-    max_points_interactive: int = 20000  # Max total points for interactive dashboard
-    
-    # Jitter parameters for performance optimization
-    enable_jitter: bool = True
-    jitter_std: float = 0.1  # Standard deviation for Gaussian noise
-    jitter_method: str = 'gaussian'  # 'gaussian', 'uniform'
-    jitter_scale_factor: float = 0.01  # Scale relative to data range
-    jitter_preserve_zero: bool = True  # Don't jitter zero embeddings
+    max_points_interactive: int = 100000  # Max total points for interactive dashboard
     
     # Spatial visualization parameters
     spatial_max_points_per_gene_type: int = 1000  # Max points per gene type for spatial plots
     spatial_alpha: float = 0.6
     spatial_tx_size: float = 2.0
+    
+    # Jitter settings
+    jitter_amount: float = 0.1
+    
 
 
 class EmbeddingExtractor:
@@ -127,6 +134,8 @@ class EmbeddingExtractor:
             extracted_embeddings = {}
             if 'tx' in embeddings_dict:
                 extracted_embeddings['tx'] = embeddings_dict['tx'].cpu()
+            if 'bd' in embeddings_dict:
+                extracted_embeddings['bd'] = embeddings_dict['bd'].cpu()
                     
         return extracted_embeddings
     
@@ -155,6 +164,8 @@ class EmbeddingExtractor:
         
         all_tx_embeddings = []
         all_tx_metadata = []
+        all_bd_embeddings = []
+        all_bd_metadata = []
         
         for batch_idx, batch in enumerate(dataloader):
             if max_batches and batch_idx >= max_batches:
@@ -194,6 +205,27 @@ class EmbeddingExtractor:
                         metadata['gene_name'] = f'tx_{tx_id}'
                     
                     all_tx_metadata.append(metadata)
+            
+            # Process bd (nuclei) embeddings
+            if 'bd' in batch_embeddings:
+                bd_emb = batch_embeddings['bd']
+                bd_ids = batch['bd'].id
+                bd_pos = batch['bd'].pos.cpu()  # Get spatial positions
+                
+                all_bd_embeddings.append(bd_emb)
+                
+                # Add metadata for bd nodes
+                for i, bd_id in enumerate(bd_ids):
+                    metadata = {
+                        'node_id': bd_id,
+                        'node_type': 'bd',
+                        'batch_idx': batch_idx,
+                        'within_batch_idx': i,
+                        'x': bd_pos[i, 0].item(),
+                        'y': bd_pos[i, 1].item()
+                    }
+                    
+                    all_bd_metadata.append(metadata)
         
         # Concatenate all embeddings
         result = {}
@@ -201,6 +233,11 @@ class EmbeddingExtractor:
             result['tx'] = {
                 'embeddings': torch.cat(all_tx_embeddings, dim=0),
                 'metadata': pd.DataFrame(all_tx_metadata)
+            }
+        if all_bd_embeddings:
+            result['bd'] = {
+                'embeddings': torch.cat(all_bd_embeddings, dim=0),
+                'metadata': pd.DataFrame(all_bd_metadata)
             }
             
         return result
@@ -220,100 +257,6 @@ class EmbeddingVisualizer:
         # Store fitted reducers for consistent coordinates across epochs
         self.fitted_reducers = {}
         
-    def _balanced_sampling(self, metadata: pd.DataFrame, max_points: int, min_per_type: int = 10) -> np.ndarray:
-        """
-        Perform balanced sampling that ensures each gene type has adequate representation.
-        
-        Args:
-            metadata: DataFrame containing the metadata with 'gene_type' column
-            max_points: Maximum number of points to sample
-            min_per_type: Minimum number of samples per gene type
-            
-        Returns:
-            Array of indices for balanced sampling
-        """
-        if 'gene_type' not in metadata.columns:
-            # Fallback to random sampling if no gene_type column
-            return np.random.choice(len(metadata), max_points, replace=False)
-        
-        # Get unique gene types and their counts
-        gene_type_counts = metadata['gene_type'].value_counts()
-        gene_types = gene_type_counts.index.tolist()
-        n_gene_types = len(gene_types)
-        
-        print(f"Found {n_gene_types} gene types: {dict(gene_type_counts)}")
-        
-        # Calculate target samples per gene type
-        if n_gene_types * min_per_type > max_points:
-            # If we can't satisfy min_per_type for all types, distribute evenly
-            samples_per_type = max_points // n_gene_types
-            min_per_type = max(1, samples_per_type)
-            print(f"Adjusting min_per_type to {min_per_type} due to max_points constraint")
-        
-        # Calculate how many samples each gene type should get
-        remaining_points = max_points
-        type_sample_counts = {}
-        
-        # First, ensure each gene type gets at least min_per_type samples
-        for gene_type in gene_types:
-            available_samples = min(gene_type_counts[gene_type], min_per_type)
-            type_sample_counts[gene_type] = available_samples
-            remaining_points -= available_samples
-        
-        # Distribute remaining points proportionally based on original counts
-        if remaining_points > 0:
-            # Calculate weights based on remaining samples after min allocation
-            remaining_counts = {}
-            for gene_type in gene_types:
-                remaining_counts[gene_type] = max(0, gene_type_counts[gene_type] - type_sample_counts[gene_type])
-            
-            total_remaining = sum(remaining_counts.values())
-            if total_remaining > 0:
-                for gene_type in gene_types:
-                    if remaining_counts[gene_type] > 0:
-                        additional_samples = int(remaining_points * remaining_counts[gene_type] / total_remaining)
-                        # Ensure we don't exceed available samples for this gene type
-                        additional_samples = min(additional_samples, remaining_counts[gene_type])
-                        type_sample_counts[gene_type] += additional_samples
-        
-        # Perform stratified sampling
-        selected_indices = []
-        for gene_type in gene_types:
-            gene_type_mask = metadata['gene_type'] == gene_type
-            # Use iloc-based positions instead of index values to avoid index mismatch
-            gene_type_positions = np.where(gene_type_mask)[0]
-            
-            n_samples = type_sample_counts[gene_type]
-            if len(gene_type_positions) <= n_samples:
-                # Take all available samples if we have fewer than requested
-                selected_indices.extend(gene_type_positions)
-            else:
-                # Random sample from this gene type
-                sampled_positions = np.random.choice(gene_type_positions, n_samples, replace=False)
-                selected_indices.extend(sampled_positions)
-        
-        selected_indices = np.array(selected_indices)
-        
-        # If we still have points to fill (due to rounding), randomly sample from remaining
-        if len(selected_indices) < max_points:
-            remaining_needed = max_points - len(selected_indices)
-            all_positions = set(range(len(metadata)))
-            unselected_positions = list(all_positions - set(selected_indices))
-            
-            if len(unselected_positions) >= remaining_needed:
-                additional_positions = np.random.choice(unselected_positions, remaining_needed, replace=False)
-                selected_indices = np.concatenate([selected_indices, additional_positions])
-        
-        # Final verification and truncation if needed
-        if len(selected_indices) > max_points:
-            selected_indices = np.random.choice(selected_indices, max_points, replace=False)
-        
-        # Print final sampling statistics
-        final_metadata = metadata.iloc[selected_indices]
-        final_counts = final_metadata['gene_type'].value_counts()
-        print(f"Final balanced sampling: {dict(final_counts)} (total: {len(selected_indices)})")
-        
-        return selected_indices
         
     def _apply_dimensionality_reduction(self, 
                                       embeddings: torch.Tensor,
@@ -407,108 +350,75 @@ class EmbeddingVisualizer:
             else:
                 raise e
         
-        # Display detailed information for PCA
-        if method == 'pca':
-            self._display_pca_details(reducer, embeddings_np, node_type)
-            
-            # Store PCA reducer for analysis plots even if not explicitly fitting
-            if reducer_key and method == 'pca':
-                self.fitted_reducers[reducer_key] = reducer
-        
         # Store fitted reducer if requested
         if fit_reducer and reducer_key:
             self.fitted_reducers[reducer_key] = reducer
             
         return reduced_embeddings
     
-    def _subsample_data(self, 
-                       embeddings: torch.Tensor, 
-                       metadata: pd.DataFrame,
-                       color_column: str) -> Tuple[torch.Tensor, pd.DataFrame]:
-        """
-        Subsample data for visualization if it's too large.
-        
-        Args:
-            embeddings: Input embeddings
-            metadata: Metadata DataFrame
-            color_column: Column to use for balanced sampling
-            
-        Returns:
-            Subsampled embeddings and metadata
-        """
-        if len(embeddings) <= self.config.max_points_per_type * len(metadata[color_column].unique()):
-            return embeddings, metadata
-            
-        if self.config.subsample_method == 'random':
-            indices = np.random.choice(len(embeddings), 
-                                     min(len(embeddings), self.config.max_points_per_type * len(metadata[color_column].unique())), 
-                                     replace=False)
-        elif self.config.subsample_method == 'balanced':
-            indices = []
-            for group in metadata[color_column].unique():
-                group_indices = metadata[metadata[color_column] == group].index
-                n_sample = min(len(group_indices), self.config.max_points_per_type)
-                sampled_indices = np.random.choice(group_indices, n_sample, replace=False)
-                indices.extend(sampled_indices)
-            indices = np.array(indices)
-        else:
-            raise ValueError(f"Unknown subsample method: {self.config.subsample_method}")
-            
-        return embeddings[indices], metadata.iloc[indices].reset_index(drop=True)
-    
     def _apply_jitter(self, embeddings: np.ndarray) -> np.ndarray:
         """
-        Apply small random jitter to break up identical coordinates for improved UMAP performance.
+        Apply jitter to embeddings for improved UMAP performance.
         
         Args:
-            embeddings: Input embeddings as numpy array
+            embeddings: Input embeddings numpy array
+    
+        Returns:
+            Jittered embeddings numpy array
+        """
+        if self.config.jitter_amount > 0:
+            return embeddings + np.random.normal(0, self.config.jitter_amount, embeddings.shape)
+        return embeddings
+    
+    def _apply_leiden_clustering(self, coordinates: np.ndarray, n_neighbors: int = 15, resolution: float = 0.001) -> np.ndarray:
+        """
+        Apply Leiden clustering to coordinates.
+        
+        Args:
+            coordinates: 2D coordinates (e.g., UMAP, t-SNE, PCA results)
+            n_neighbors: Number of neighbors for graph construction
+            resolution: Resolution parameter for clustering
             
         Returns:
-            Jittered embeddings
+            Array of cluster labels
         """
-        if not self.config.enable_jitter:
-            return embeddings
+        if leidenalg is None or ig is None or NearestNeighbors is None:
+            print("Warning: Leiden clustering dependencies not available. Using dummy clusters.")
+            # Return dummy clusters (just assign all points to cluster 0)
+            return np.zeros(len(coordinates), dtype=int)
+        
+        try:
+            # Build k-nearest neighbors graph
+            nbrs = NearestNeighbors(n_neighbors=n_neighbors, algorithm='auto').fit(coordinates)
+            distances, indices = nbrs.kneighbors(coordinates)
             
-        print(f"Applying {self.config.jitter_method} jitter for improved UMAP performance...")
-        
-        # Make a copy to avoid modifying original data
-        jittered_embeddings = embeddings.copy()
-        
-        # Optionally preserve zero embeddings (often indicates missing/invalid data)
-        if self.config.jitter_preserve_zero:
-            zero_mask = np.all(embeddings == 0, axis=1)
-        else:
-            zero_mask = np.zeros(len(embeddings), dtype=bool)
-        
-        # Calculate data range for scaling
-        non_zero_data = embeddings[~zero_mask] if self.config.jitter_preserve_zero and zero_mask.any() else embeddings
-        if len(non_zero_data) == 0:
-            return embeddings  # All zeros, no jitter needed
+            # Create igraph from adjacency
+            edges = []
+            weights = []
+            for i in range(len(indices)):
+                for j in range(1, len(indices[i])):  # Skip self (index 0)
+                    neighbor = indices[i][j]
+                    weight = 1.0 / (1.0 + distances[i][j])  # Convert distance to weight
+                    edges.append((i, neighbor))
+                    weights.append(weight)
             
-        data_range = np.ptp(non_zero_data, axis=0)
-        # Avoid division by zero for constant dimensions
-        data_range = np.where(data_range == 0, 1.0, data_range)
-        jitter_scale = data_range * self.config.jitter_scale_factor
-        
-        # Generate jitter based on method
-        if self.config.jitter_method == 'gaussian':
-            jitter = np.random.normal(0, self.config.jitter_std * jitter_scale, embeddings.shape)
-        elif self.config.jitter_method == 'uniform':
-            jitter_range = self.config.jitter_std * jitter_scale * np.sqrt(3)  # Match variance
-            jitter = np.random.uniform(-jitter_range, jitter_range, embeddings.shape)
-        else:
-            raise ValueError(f"Unknown jitter method: {self.config.jitter_method}")
-        
-        # Apply jitter only to non-zero embeddings if preserve_zero is enabled
-        if self.config.jitter_preserve_zero and zero_mask.any():
-            jittered_embeddings[~zero_mask] += jitter[~zero_mask]
-        else:
-            jittered_embeddings += jitter
-        
-        jitter_magnitude = np.mean(np.linalg.norm(jitter, axis=1))
-        print(f"Applied jitter with mean magnitude: {jitter_magnitude:.6f}")
-        
-        return jittered_embeddings
+            # Create igraph
+            g = ig.Graph(n=len(coordinates), edges=edges)
+            g.es['weight'] = weights
+            
+            # Apply Leiden clustering
+            partition = leidenalg.find_partition(g, leidenalg.RBConfigurationVertexPartition, 
+                                               resolution_parameter=resolution, weights='weight')
+            
+            # Get cluster labels
+            cluster_labels = np.array(partition.membership)
+            
+            print(f"Leiden clustering: {len(coordinates)} points -> {len(set(cluster_labels))} clusters")
+            return cluster_labels
+            
+        except Exception as e:
+            print(f"Warning: Leiden clustering failed: {e}. Using dummy clusters.")
+            return np.zeros(len(coordinates), dtype=int)
     
     def fit_reference_reducers(self, reference_embeddings_data: Dict[str, Dict]) -> None:
         """
@@ -524,12 +434,6 @@ class EmbeddingVisualizer:
             metadata = data['metadata']
             
             print(f"Fitting reducer for {node_type} nodes ({len(embeddings)} nodes)...")
-            
-            # Determine color column for subsampling
-            color_column = 'gene_name' if node_type == 'tx' else 'cell_type'
-            
-            # Subsample if necessary
-            embeddings, metadata = self._subsample_data(embeddings, metadata, color_column)
             
             # Fit reducer
             self._apply_dimensionality_reduction(
@@ -558,94 +462,88 @@ class EmbeddingVisualizer:
         save_dir.mkdir(parents=True, exist_ok=True)
         saved_plots = {}
         
+        # Check transcript count before processing
+        if 'tx' in embeddings_data:
+            tx_count = len(embeddings_data['tx']['metadata'])
+            max_points_interactive = getattr(self.config, 'max_points_interactive', 100000)
+            if tx_count > max_points_interactive:
+                raise ValueError(f"Number of transcripts ({tx_count:,}) exceeds max_points_interactive limit ({max_points_interactive:,}). "
+                               f"Please use spatial filtering to reduce the number of transcripts or increase max_points_interactive.")
+        
         for node_type, data in embeddings_data.items():
-            embeddings = data['embeddings']
             metadata = data['metadata']
             
-            print(f"Visualizing {node_type} embeddings ({len(embeddings):,} nodes)...")
+            print(f"Visualizing {node_type} embeddings ({len(metadata):,} nodes)...")
             
-            # Determine color column and add gene types if available
-            if node_type == 'tx':
-                color_column = 'gene_name'
-                if gene_types_dict and 'gene_name' in metadata.columns:
-                    metadata['gene_type'] = metadata['gene_name'].map(gene_types_dict)
-                    # Don't fill NA values - they will be filtered out in plotting
-            else:  # bd
-                color_column = 'cell_type'
+            # Add gene types if available for tx nodes
+            if node_type == 'tx' and gene_types_dict and 'gene_name' in metadata.columns:
+                metadata['gene_type'] = metadata['gene_name'].map(gene_types_dict)
                 
-            # Subsample if necessary - use balanced sampling for consistency with interactive dashboard
-            if self.config.subsample_method == 'balanced' and color_column == 'gene_name':
-                # Use balanced sampling similar to interactive dashboard for tx nodes
-                total_points_limit = self.config.max_points_per_type * len(metadata[color_column].unique())
-                if len(metadata) > total_points_limit:
-                    indices = self._balanced_sampling(metadata, total_points_limit)
-                    embeddings = embeddings[indices]
-                    metadata = metadata.iloc[indices].reset_index(drop=True)
-            else:
-                # Use the original subsampling method
-                embeddings, metadata = self._subsample_data(embeddings, metadata, color_column)
-            
-            # # Apply dimensionality reduction with consistent coordinates
-            # reduced_embeddings = self._apply_dimensionality_reduction(
-            #     embeddings, 
-            #     node_type=node_type
-            # )
-            
-            # # Create PCA-specific analysis plots if using PCA
-            # if self.config.method == 'pca' and node_type == 'tx':
-            #     reducer_key = f"pca_{node_type}"
-            #     if reducer_key in self.fitted_reducers:
-            #         pca_reducer = self.fitted_reducers[reducer_key]
-                    
-            #         # Create PCA analysis plots
-            #         pca_analysis_plots = self._create_pca_analysis_plots(
-            #             pca_reducer, reduced_embeddings, metadata, save_dir, title_prefix, gene_types_dict
-            #         )
-            #         saved_plots.update(pca_analysis_plots)
-                    
-            #         # Create 3D PCA plot if we have enough components
-            #         if self.config.n_components >= 3:
-            #             pca_3d_plots = self._create_pca_3d_plot(
-            #                 reduced_embeddings, metadata, save_dir, title_prefix, gene_types_dict
-            #             )
-            #             saved_plots.update(pca_3d_plots)
-            
-            # # Create plots only for tx nodes
-            # if node_type == 'tx':
-            #     plots = self._create_tx_plots(reduced_embeddings, metadata, save_dir, title_prefix, gene_types_dict)
-            #     saved_plots.update(plots)
-        
-        # # Add spatial plots if spatial coordinates are available
-        # spatial_plots = self._create_spatial_plots(embeddings_data, save_dir, title_prefix)
-        # saved_plots.update(spatial_plots)
+                # Fill NA values based on gene name
+                is_negative_control = metadata['gene_name'].str.contains('BLANK|Neg', case=False, na=False)
+                # calculate the number of negative controls
+                negative_control_count = is_negative_control.sum()
+                print(f"Number of negative controls: {negative_control_count}")
+                metadata['gene_type'] = np.where(
+                    metadata['gene_type'].isna() & ~is_negative_control,
+                    'Unknown',
+                    metadata['gene_type']  # Keep original (including NaN for negative controls)
+                )
+                # calculate the number of unknown gene types
+                unknown_gene_type_count = metadata['gene_type'].str.contains('Unknown').sum()
+                print(f"Number of unknown gene types: {unknown_gene_type_count}")
         
         # Create interactive dashboard if tx data is available
         if 'tx' in embeddings_data:
-            try:
-                # For interactive dashboard, we need spatial data, so extract it if not provided
-                if 'x' in embeddings_data['tx']['metadata'].columns:
-                    # Use embeddings_data as spatial_data since it contains spatial coordinates
-                    spatial_data_for_dashboard = {
-                        'tx': {
-                            'positions': torch.column_stack([
-                                torch.tensor(embeddings_data['tx']['metadata']['x'].values),
-                                torch.tensor(embeddings_data['tx']['metadata']['y'].values)
-                            ]),
-                            'metadata': embeddings_data['tx']['metadata']
-                        }
+            #try:
+            # For interactive dashboard, we need spatial data, so extract it if not provided
+            if 'x' in embeddings_data['tx']['metadata'].columns:
+                # Use embeddings_data as spatial_data since it contains spatial coordinates
+                spatial_data_for_dashboard = {
+                    'tx': {
+                        'positions': torch.column_stack([
+                            torch.tensor(embeddings_data['tx']['metadata']['x'].values),
+                            torch.tensor(embeddings_data['tx']['metadata']['y'].values)
+                        ]),
+                        'metadata': embeddings_data['tx']['metadata']
                     }
-                    
-                    interactive_plot_path = self.create_interactive_dashboard(
-                        embeddings_data=embeddings_data,
-                        spatial_data=spatial_data_for_dashboard,
-                        save_dir=save_dir,
-                        title_prefix=title_prefix,
-                        gene_types_dict=gene_types_dict
-                    )
-                    if interactive_plot_path:
-                        saved_plots['interactive_dashboard'] = interactive_plot_path
-            except Exception as e:
-                print(f"Warning: Could not create interactive dashboard: {e}")
+                }
+                
+                # Add bd nodes (nuclei) to spatial data if available
+                if 'bd' in embeddings_data and 'x' in embeddings_data['bd']['metadata'].columns:
+                    spatial_data_for_dashboard['bd'] = {
+                        'positions': torch.column_stack([
+                            torch.tensor(embeddings_data['bd']['metadata']['x'].values),
+                            torch.tensor(embeddings_data['bd']['metadata']['y'].values)
+                        ]),
+                        'metadata': embeddings_data['bd']['metadata']
+                }
+                
+                # Create gene type dashboard
+                gene_type_dashboard_path = self.create_interactive_dashboard(
+                    embeddings_data=embeddings_data,
+                    spatial_data=spatial_data_for_dashboard,
+                    save_dir=save_dir,
+                    title_prefix=title_prefix,
+                    gene_types_dict=gene_types_dict,
+                    dashboard_type='gene_type'
+                )
+                if gene_type_dashboard_path:
+                    saved_plots['gene_type_dashboard'] = gene_type_dashboard_path
+                
+                # Create cluster dashboard
+                cluster_dashboard_path = self.create_interactive_dashboard(
+                    embeddings_data=embeddings_data,
+                    spatial_data=spatial_data_for_dashboard,
+                    save_dir=save_dir,
+                    title_prefix=title_prefix,
+                    gene_types_dict=gene_types_dict,
+                    dashboard_type='cluster'
+                )
+                if cluster_dashboard_path:
+                    saved_plots['cluster_dashboard'] = cluster_dashboard_path
+            # except Exception as e:
+            #     print(f"Warning: Could not create interactive dashboard: {e}")
             
         return saved_plots
     
@@ -717,155 +615,6 @@ class EmbeddingVisualizer:
                 plt.close()
                 plots['tx_by_gene_type'] = str(plot_path)
         
-
-        
-        return plots
-    
-
-    
-    def _create_spatial_plots(self,
-                            embeddings_data: Dict[str, Dict],
-                            save_dir: Path,
-                            title_prefix: str) -> Dict[str, str]:
-        """
-        Create plots for tx embeddings colored by spatial coordinates using two color channels.
-        
-        Args:
-            embeddings_data: Dictionary containing embeddings and metadata with spatial coordinates
-            save_dir: Directory to save plots
-            title_prefix: Prefix for plot titles
-            
-        Returns:
-            Dictionary mapping plot names to file paths
-        """
-        plots = {}
-        
-        # Only process tx nodes
-        if 'tx' not in embeddings_data:
-            return plots
-            
-        data = embeddings_data['tx']
-        if 'x' not in data['metadata'].columns or 'y' not in data['metadata'].columns:
-            print(f"Warning: No spatial coordinates found for tx nodes")
-            return plots
-            
-        embeddings = data['embeddings']
-        metadata = data['metadata']
-        
-        # Apply subsampling first to ensure consistent data sizes
-        embeddings, metadata = self._subsample_data(embeddings, metadata, 'gene_name')
-        
-        # Get spatial coordinates
-        x_coords = metadata['x'].values
-        y_coords = metadata['y'].values
-        
-        # Normalize coordinates to [0, 1] for color mapping
-        x_normalized = (x_coords - x_coords.min()) / (x_coords.max() - x_coords.min()) if x_coords.max() != x_coords.min() else np.zeros_like(x_coords)
-        y_normalized = (y_coords - y_coords.min()) / (y_coords.max() - y_coords.min()) if y_coords.max() != y_coords.min() else np.zeros_like(y_coords)
-        
-        # Apply dimensionality reduction
-        reduced_embeddings = self._apply_dimensionality_reduction(
-            embeddings, 
-            node_type='tx'
-        )
-        
-        # Create RGB colors using x and y coordinates
-        # Red channel: x coordinate, Green channel: y coordinate, Blue channel: fixed
-        rgb_colors = np.column_stack([x_normalized, y_normalized, np.full_like(x_normalized, 0.5)])
-        
-        # Plot: Embeddings colored by spatial coordinates (two-channel)
-        fig, ax = plt.subplots(figsize=self.config.figsize)
-        
-        scatter = ax.scatter(
-            reduced_embeddings[:, 0], 
-            reduced_embeddings[:, 1],
-            c=rgb_colors,
-            s=self.config.point_size,
-            alpha=self.config.alpha
-        )
-        
-        ax.set_xlabel(f'{self.config.method.upper()} 1')
-        ax.set_ylabel(f'{self.config.method.upper()} 2')
-        ax.set_title(f'{title_prefix}TX Embeddings by Spatial Coordinates ({len(metadata):,} transcripts, Red=X, Green=Y)')
-        ax.grid(True, alpha=0.3)
-        
-        # Add a custom colorbar explanation
-        ax.text(0.02, 0.98, 'Color: Red=X coord, Green=Y coord', 
-                transform=ax.transAxes, verticalalignment='top',
-                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-        
-        plt.tight_layout()
-        plot_path = save_dir / f'tx_embeddings_by_spatial_coordinates.{self.config.save_format}'
-        plt.savefig(plot_path, dpi=self.config.dpi, bbox_inches='tight')
-        plt.close()
-        plots['tx_by_spatial_coordinates'] = str(plot_path)
-        
-        return plots
-    
-    def _create_tx_spatial_plots(self,
-                               spatial_data: Dict[str, Dict],
-                               save_dir: Path,
-                               title_prefix: str) -> Dict[str, str]:
-        """
-        Create spatial plots for tx nodes using actual spatial coordinates with two-channel coloring.
-        
-        Args:
-            spatial_data: Dictionary containing spatial coordinates and metadata
-            save_dir: Directory to save plots
-            title_prefix: Prefix for plot titles
-            
-        Returns:
-            Dictionary mapping plot names to file paths
-        """
-        plots = {}
-        
-        # Only process tx nodes
-        if 'tx' not in spatial_data:
-            return plots
-            
-        data = spatial_data['tx']
-        positions = data['positions']
-        metadata = data['metadata']
-        
-        # Get spatial coordinates
-        x_coords = positions[:, 0].numpy()
-        y_coords = positions[:, 1].numpy()
-        
-        # Normalize coordinates to [0, 1] for color mapping
-        x_normalized = (x_coords - x_coords.min()) / (x_coords.max() - x_coords.min()) if x_coords.max() != x_coords.min() else np.zeros_like(x_coords)
-        y_normalized = (y_coords - y_coords.min()) / (y_coords.max() - y_coords.min()) if y_coords.max() != y_coords.min() else np.zeros_like(y_coords)
-        
-        # Create RGB colors using x and y coordinates
-        # Red channel: x coordinate, Green channel: y coordinate, Blue channel: fixed
-        rgb_colors = np.column_stack([x_normalized, y_normalized, np.full_like(x_normalized, 0.5)])
-        
-        # Plot: Actual spatial coordinates with two-channel coloring
-        fig, ax = plt.subplots(figsize=self.config.figsize)
-        
-        scatter = ax.scatter(
-            x_coords, 
-            y_coords,
-            c=rgb_colors,
-            s=self.config.spatial_tx_size,
-            alpha=self.config.spatial_alpha
-        )
-        
-        ax.set_xlabel('X Coordinate (µm)')
-        ax.set_ylabel('Y Coordinate (µm)')
-        ax.set_title(f'{title_prefix}TX Spatial Distribution ({len(metadata):,} transcripts, Red=X, Green=Y)')
-        ax.grid(True, alpha=0.3)
-        
-        # Add a custom colorbar explanation
-        ax.text(0.02, 0.98, 'Color: Red=X coord, Green=Y coord', 
-                transform=ax.transAxes, verticalalignment='top',
-                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-        
-        plt.tight_layout()
-        plot_path = save_dir / f'tx_spatial_coordinates.{self.config.save_format}'
-        plt.savefig(plot_path, dpi=self.config.dpi, bbox_inches='tight')
-        plt.close()
-        plots['tx_spatial_coordinates'] = str(plot_path)
-        
         return plots
     
     def create_interactive_dashboard(self,
@@ -874,7 +623,8 @@ class EmbeddingVisualizer:
                                    save_dir: Path,
                                    title_prefix: str = "",
                                    gene_types_dict: Optional[Dict] = None,
-                                   epoch_data: Optional[Dict[str, Dict[str, Dict]]] = None) -> str:
+                                   epoch_data: Optional[Dict[str, Dict[str, Dict]]] = None,
+                                   dashboard_type: str = 'gene_type') -> str:
         """
         Create an interactive Plotly dashboard with two synchronized plots.
         
@@ -886,6 +636,7 @@ class EmbeddingVisualizer:
             gene_types_dict: Mapping from gene name to gene type
             epoch_data: Optional dict with format {epoch_name: {embeddings_data: {...}, spatial_data: {...}}}
                        for multi-epoch visualization
+            dashboard_type: Type of dashboard ('gene_type' or 'cluster')
             
         Returns:
             Path to the saved interactive HTML file
@@ -914,39 +665,9 @@ class EmbeddingVisualizer:
         embeddings = embeddings_data['tx']['embeddings']
         metadata = embeddings_data['tx']['metadata'].copy()
         
-        # Add gene type information if available (but don't filter yet - do it as last step)
-        if gene_types_dict and 'gene_name' in metadata.columns:
-            metadata['gene_type'] = metadata['gene_name'].map(gene_types_dict)
-            # Don't filter NA values here - they will be filtered as the last step for gene type plot only
-        
-        # Apply the same subsampling logic as static plots for consistency
-        # Use 'gene_name' as the color column to match static plots (not 'gene_type')
-        embeddings, metadata = self._subsample_data(embeddings, metadata, 'gene_name')
-        
-        # Get spatial coordinates first
+        # Get spatial coordinates
         x_coords = metadata['x'].values
         y_coords = metadata['y'].values
-        
-        # Apply balanced subsampling for interactive plots to improve performance
-        # Make this configurable to match static plots if needed
-        max_points_interactive = getattr(self.config, 'max_points_interactive', 20000)
-        max_points = min(max_points_interactive, len(metadata))
-        if len(metadata) > max_points:
-            print(f"Subsampling from {len(metadata)} to {max_points} points for interactive dashboard performance")
-            indices = self._balanced_sampling(metadata, max_points)
-            
-            # Validate indices before using them
-            if len(indices) == 0:
-                print("Warning: No valid indices returned from balanced sampling")
-                return ""
-            if np.max(indices) >= len(metadata):
-                print(f"Warning: Invalid indices in balanced sampling. Max index: {np.max(indices)}, metadata length: {len(metadata)}")
-                return ""
-            
-            embeddings = embeddings[indices]
-            metadata = metadata.iloc[indices].reset_index(drop=True)
-            x_coords = metadata['x'].values
-            y_coords = metadata['y'].values
         
         # Apply dimensionality reduction for embedding plots (only if embeddings are not dummy)
         if embeddings.sum() != 0:  # Check if embeddings are not all zeros (dummy)
@@ -955,24 +676,38 @@ class EmbeddingVisualizer:
             # For spatial-only data, use spatial coordinates as "embeddings"
             reduced_embeddings = np.column_stack([x_coords, y_coords])
         
-        # Normalize spatial coordinates for color mapping
-        x_normalized = (x_coords - x_coords.min()) / (x_coords.max() - x_coords.min()) if x_coords.max() != x_coords.min() else np.zeros_like(x_coords)
-        y_normalized = (y_coords - y_coords.min()) / (y_coords.max() - y_coords.min()) if y_coords.max() != y_coords.min() else np.zeros_like(y_coords)
+        # Apply Leiden clustering only for cluster dashboard
+        if dashboard_type == 'cluster':
+            cluster_labels = self._apply_leiden_clustering(reduced_embeddings)
+            metadata['cluster'] = cluster_labels
+        else:
+            cluster_labels = None
         
         # Calculate counts for subplot titles
         total_transcripts = len(metadata)
         gene_type_transcripts = metadata['gene_type'].notna().sum() if 'gene_type' in metadata.columns else 0
+        nuclei_count = len(spatial_data['bd']['metadata']) if 'bd' in spatial_data else 0
+        n_clusters = len(set(cluster_labels)) if cluster_labels is not None else 0
         
-        # Create subplot figure with 1 row, 2 columns (larger size)
+        # Create subplot figure with 1 row, 2 columns (16:9 optimized)
+        if dashboard_type == 'gene_type':
+            subplot_titles = [
+                f'{title_prefix}Embeddings by Gene Type ({gene_type_transcripts:,} transcripts)',
+                f'{title_prefix}Spatial by Gene Type ({total_transcripts:,} transcripts' + (f', {nuclei_count:,} nuclei' if nuclei_count > 0 else '') + ')'
+            ]
+        else:  # cluster
+            subplot_titles = [
+                f'{title_prefix}Embeddings by Cluster ({n_clusters} clusters)',
+                f'{title_prefix}Spatial by Cluster ({n_clusters} clusters' + (f', {nuclei_count:,} nuclei' if nuclei_count > 0 else '') + ')'
+            ]
+        
         fig = make_subplots(
             rows=1, cols=2,
-            subplot_titles=[
-                f'{title_prefix}TX Embeddings by Gene Type ({gene_type_transcripts:,} transcripts)',
-                f'{title_prefix}TX Spatial Distribution ({total_transcripts:,} transcripts)'
-            ],
+            subplot_titles=subplot_titles,
             horizontal_spacing=0.08
         )
         
+        print("gene types: ", metadata['gene_type'].unique())
         # Prepare colors for gene types using the same palette as static plots
         # Filter gene types to only include valid ones (not NA) for consistent coloring
         if 'gene_type' in metadata.columns:
@@ -1001,6 +736,21 @@ class EmbeddingVisualizer:
                 print(f"Fallback color for gene type {gene_type}: {gene_type_colors[gene_type]}")
                 fallback_index += 1
         
+        # Prepare cluster colors using discrete palette
+        cluster_colors = {}
+        unique_clusters = []
+        if cluster_labels is not None:
+            unique_clusters = sorted(set(cluster_labels))
+            if px is not None:
+                # Use plotly's discrete color sequence
+                color_sequence = px.colors.qualitative.Set3 + px.colors.qualitative.Pastel + px.colors.qualitative.Set1
+            else:
+                # Fallback colors
+                color_sequence = ['#8dd3c7', '#ffffb3', '#bebada', '#fb8072', '#80b1d3', '#fdb462', '#b3de69', '#fccde5']
+            
+            for i, cluster in enumerate(unique_clusters):
+                cluster_colors[cluster] = color_sequence[i % len(color_sequence)]
+        
         # Create unique IDs for each transcript for selection synchronization
         transcript_ids = list(range(len(metadata)))
         
@@ -1008,124 +758,230 @@ class EmbeddingVisualizer:
         # rgb_colors_hex = [f'rgb({int(x_normalized[i]*255)},{int(y_normalized[i]*255)},{int(0.5*255)})' 
         #                  for i in range(len(x_normalized))]
         
-        # Plot 1: Embeddings by Gene Type (apply gene type filtering as LAST step)
-        if gene_types and 'gene_type' in metadata.columns:
-            # Apply gene type filtering as the final step to match static plots
-            valid_gene_type_mask = metadata['gene_type'].notna()
-            
-            for gene_type in gene_types:
-                # Only include transcripts with valid gene types (not NA)
-                mask = (metadata['gene_type'] == gene_type) & valid_gene_type_mask
-                if mask.any():
-                    indices = np.where(mask)[0]
-                    # Validate indices to prevent out-of-bounds errors
-                    valid_indices = [i for i in indices if i < len(metadata) and i < len(transcript_ids) and i < len(x_coords) and i < len(y_coords)]
+        # Create plots based on dashboard type
+        if dashboard_type == 'gene_type':
+            # Plot 1: Embeddings by Gene Type
+            if gene_types and 'gene_type' in metadata.columns:
+                # Apply gene type filtering as the final step to match static plots
+                valid_gene_type_mask = metadata['gene_type'].notna()
+                
+                for gene_type in gene_types:
+                    # Only include transcripts with valid gene types (not NA)
+                    mask = (metadata['gene_type'] == gene_type) & valid_gene_type_mask
+                    if mask.any():
+                        indices = np.where(mask)[0]
+                        # Validate indices to prevent out-of-bounds errors
+                        valid_indices = [i for i in indices if i < len(metadata) and i < len(transcript_ids) and i < len(x_coords) and i < len(y_coords)]
+                        if len(valid_indices) == 0:
+                            continue
+                            
+                        # Create valid mask for the valid indices
+                        valid_mask = np.zeros(len(metadata), dtype=bool)
+                        valid_mask[valid_indices] = True
+                        
+                        fig.add_trace(
+                            go.Scatter(
+                                x=reduced_embeddings[valid_mask, 0],
+                                y=reduced_embeddings[valid_mask, 1],
+                                mode='markers',
+                                marker=dict(
+                                    color=gene_type_colors[gene_type],
+                                    size=5,
+                                    opacity=0.7
+                                ),
+                                name=gene_type,
+                                text=[f"ID: {transcript_ids[i]}<br>Gene: {metadata.iloc[i]['gene_name']}<br>Type: {gene_type}<br>X: {x_coords[i]:.1f}<br>Y: {y_coords[i]:.1f}" 
+                                      for i in valid_indices],
+                                hovertemplate='%{text}<extra></extra>',
+                                customdata=valid_indices,  # Store indices for selection sync
+                                legendgroup=gene_type,
+                                showlegend=True
+                            ),
+                            row=1, col=1
+                        )
+        
+        else:  # cluster dashboard
+            # Plot 1: Embeddings by Cluster
+            for cluster in unique_clusters:
+                cluster_mask = metadata['cluster'] == cluster
+                if cluster_mask.any():
+                    indices = np.where(cluster_mask)[0]
+                    valid_indices = [i for i in indices if i < len(metadata)]
                     if len(valid_indices) == 0:
                         continue
                         
-                    # Create valid mask for the valid indices
-                    valid_mask = np.zeros(len(metadata), dtype=bool)
-                    valid_mask[valid_indices] = True
-                    
                     fig.add_trace(
                         go.Scatter(
-                            x=reduced_embeddings[valid_mask, 0],
-                            y=reduced_embeddings[valid_mask, 1],
+                            x=reduced_embeddings[cluster_mask, 0],
+                            y=reduced_embeddings[cluster_mask, 1],
                             mode='markers',
                             marker=dict(
-                                color=gene_type_colors[gene_type],
+                                color=cluster_colors[cluster],
                                 size=5,
                                 opacity=0.7
                             ),
-                            name=gene_type,
-                            text=[f"ID: {transcript_ids[i]}<br>Gene: {metadata.iloc[i]['gene_name']}<br>Type: {gene_type}<br>X: {x_coords[i]:.1f}<br>Y: {y_coords[i]:.1f}" 
+                            name=f'Cluster {cluster}',
+                            text=[f"ID: {transcript_ids[i]}<br>Cluster: {cluster}<br>Gene: {metadata.iloc[i]['gene_name']}<br>X: {x_coords[i]:.1f}<br>Y: {y_coords[i]:.1f}" 
                                   for i in valid_indices],
                             hovertemplate='%{text}<extra></extra>',
-                            customdata=valid_indices,  # Store indices for selection sync
-                            legendgroup=gene_type,
+                            customdata=valid_indices,
+                            legendgroup=f'cluster_{cluster}',
                             showlegend=True
                         ),
                         row=1, col=1
                     )
         
-        # Plot 2: Actual Spatial Distribution colored by Gene Type (one trace per gene type)
-        if gene_types and 'gene_type' in metadata.columns:
-            valid_gene_type_mask = metadata['gene_type'].notna()
-            for gene_type in gene_types:
-                mask = (metadata['gene_type'] == gene_type) & valid_gene_type_mask
-                if mask.any():
-                    indices = np.where(mask)[0]
+        # Plot 2: Spatial Distribution (conditional based on dashboard type)
+        if dashboard_type == 'gene_type':
+            # Spatial Distribution colored by Gene Type
+            if gene_types and 'gene_type' in metadata.columns:
+                valid_gene_type_mask = metadata['gene_type'].notna()
+                for gene_type in gene_types:
+                    mask = (metadata['gene_type'] == gene_type) & valid_gene_type_mask
+                    if mask.any():
+                        indices = np.where(mask)[0]
+                        valid_indices = [i for i in indices if i < len(metadata)]
+                        if len(valid_indices) == 0:
+                            continue
+                        fig.add_trace(
+                            go.Scatter(
+                                x=x_coords[valid_indices],
+                                y=y_coords[valid_indices],
+                                mode='markers',
+                                marker=dict(
+                                    color=gene_type_colors[gene_type],
+                                    size=5,
+                                    opacity=0.7
+                                ),
+                                name=gene_type,
+                                text=[f"ID: {transcript_ids[i]}<br>Gene: {metadata.iloc[i]['gene_name']}<br>Type: {gene_type}<br>X: {x_coords[i]:.1f}<br>Y: {y_coords[i]:.1f}" for i in valid_indices],
+                                hovertemplate='%{text}<extra></extra>',
+                                customdata=valid_indices,
+                                legendgroup=gene_type,
+                                showlegend=False
+                            ),
+                            row=1, col=2
+                        )
+            else:
+                # Fallback: single trace when gene types are unavailable
+                fig.add_trace(
+                    go.Scatter(
+                        x=x_coords,
+                        y=y_coords,
+                        mode='markers',
+                        marker=dict(
+                            color='#999999',
+                            size=5,
+                            opacity=0.7
+                        ),
+                        name='Spatial Distribution',
+                        text=[f"ID: {transcript_ids[i]}<br>Gene: {metadata.iloc[i]['gene_name']}<br>X: {x_coords[i]:.1f}<br>Y: {y_coords[i]:.1f}" for i in range(len(metadata))],
+                        hovertemplate='%{text}<extra></extra>',
+                        customdata=transcript_ids,
+                        showlegend=False
+                    ),
+                    row=1, col=2
+                )
+        
+        else:  # cluster dashboard
+            # Spatial Distribution colored by Cluster
+            for cluster in unique_clusters:
+                cluster_mask = metadata['cluster'] == cluster
+                if cluster_mask.any():
+                    indices = np.where(cluster_mask)[0]
                     valid_indices = [i for i in indices if i < len(metadata)]
                     if len(valid_indices) == 0:
                         continue
+                        
                     fig.add_trace(
                         go.Scatter(
                             x=x_coords[valid_indices],
                             y=y_coords[valid_indices],
                             mode='markers',
                             marker=dict(
-                                color=gene_type_colors[gene_type],
+                                color=cluster_colors[cluster],
                                 size=5,
                                 opacity=0.7
                             ),
-                            name=gene_type,
-                            text=[f"ID: {transcript_ids[i]}<br>Gene: {metadata.iloc[i]['gene_name']}<br>Type: {gene_type}<br>X: {x_coords[i]:.1f}<br>Y: {y_coords[i]:.1f}" for i in valid_indices],
+                            name=f'Cluster {cluster}',
+                            text=[f"ID: {transcript_ids[i]}<br>Cluster: {cluster}<br>Gene: {metadata.iloc[i]['gene_name']}<br>X: {x_coords[i]:.1f}<br>Y: {y_coords[i]:.1f}" 
+                                  for i in valid_indices],
                             hovertemplate='%{text}<extra></extra>',
                             customdata=valid_indices,
-                            legendgroup=gene_type,
+                            legendgroup=f'cluster_{cluster}',
                             showlegend=False
                         ),
                         row=1, col=2
                     )
-        else:
-            # Fallback: single trace when gene types are unavailable
+        
+        # Add nuclei (bd nodes) to spatial plot if available
+        if 'bd' in spatial_data:
+            bd_data = spatial_data['bd']
+            bd_positions = bd_data['positions']
+            bd_metadata = bd_data['metadata']
+            
+            # Create nuclei IDs for selection synchronization
+            bd_ids = list(range(len(transcript_ids), len(transcript_ids) + len(bd_metadata)))
+            
             fig.add_trace(
                 go.Scatter(
-                    x=x_coords,
-                    y=y_coords,
+                    x=bd_positions[:, 0].numpy(),
+                    y=bd_positions[:, 1].numpy(),
                     mode='markers',
                     marker=dict(
-                        color='#999999',
-                        size=5,
-                        opacity=0.7
+                        color='black',
+                        size=8,  # Slightly larger than transcripts
+                        opacity=0.8,
+                        symbol='circle'
                     ),
-                    name='Spatial Distribution',
-                    text=[f"ID: {transcript_ids[i]}<br>Gene: {metadata.iloc[i]['gene_name']}<br>X: {x_coords[i]:.1f}<br>Y: {y_coords[i]:.1f}" for i in range(len(metadata))],
+                    name='Nuclei',
+                    text=[f"Nucleus ID: {bd_metadata.iloc[i]['node_id']}<br>X: {bd_positions[i, 0]:.1f}<br>Y: {bd_positions[i, 1]:.1f}" for i in range(len(bd_metadata))],
                     hovertemplate='%{text}<extra></extra>',
-                    customdata=transcript_ids,
-                    showlegend=False
+                    customdata=bd_ids,
+                    showlegend=True,
+                    legendgroup='nuclei'
                 ),
                 row=1, col=2
             )
         
-        # Update layout with larger size
+        # Update layout with 16:9 optimized size for 1x2
+        dashboard_title = f'{title_prefix}Interactive {dashboard_type.replace("_", " ").title()} Dashboard ({len(metadata):,} transcripts'
+        if dashboard_type == 'cluster':
+            dashboard_title += f', {n_clusters} clusters'
+        if nuclei_count > 0:
+            dashboard_title += f', {nuclei_count:,} nuclei'
+        dashboard_title += ')'
+        
         fig.update_layout(
-            title=f'{title_prefix}Interactive TX Embeddings Dashboard ({len(metadata):,} transcripts)',
-            height=1000,  # Increased height
-            width=1800,  # Adjusted width for 2 columns
+            title=dashboard_title,
+            height=900,   # Reduced height for 1x2
+            width=1800,   # Reduced width for 1x2
             showlegend=True,
             legend=dict(
                 orientation="v",
                 yanchor="top",
                 y=1,
                 xanchor="left",
-                x=1,
-                font=dict(size=14),
+                x=1.02,
+                font=dict(size=12),
                 itemsizing="constant",
-                itemwidth=40  
+                itemwidth=30  
             ),
             dragmode='lasso'
         )
         
-        # Update axes labels
+        # Update axes labels for 1x2 layout
+        # Col 1: Embeddings
         fig.update_xaxes(title_text=f'{self.config.method.upper()} 1', row=1, col=1)
         fig.update_yaxes(title_text=f'{self.config.method.upper()} 2', row=1, col=1)
         
+        # Col 2: Spatial
         fig.update_xaxes(title_text='X Coordinate (µm)', row=1, col=2)
         fig.update_yaxes(title_text='Y Coordinate (µm)', row=1, col=2)
         
-        # Save the base figure
-        plot_path = save_dir / f'interactive_tx_dashboard.html'
+        # Save the base figure with appropriate filename
+        filename = f'interactive_{"gene_types" if dashboard_type == "gene_type" else "clusters"}.html'
+        plot_path = save_dir / filename
         fig.write_html(str(plot_path))
         
         # Read the HTML and add improved JavaScript for cross-plot synchronization
@@ -1133,7 +989,11 @@ class EmbeddingVisualizer:
             html_content = f.read()
         
         # Add enhanced JavaScript for selection synchronization and legend interaction
-        selection_js = """
+        dashboard_name = dashboard_type.replace('_', ' ').title()
+        item_type = 'gene type' if dashboard_type == 'gene_type' else 'cluster'
+        item_types = 'gene types' if dashboard_type == 'gene_type' else 'clusters'
+        
+        selection_js = f"""
         <script>
         // Enhanced interactive dashboard with legend controls and selection synchronization
         var plotDiv = document.getElementsByClassName('plotly-graph-div')[0];
@@ -1145,55 +1005,58 @@ class EmbeddingVisualizer:
         var DOUBLE_CLICK_DELAY = 300; // milliseconds
         
         // Track original visibility state for all traces
-        var originalVisibility = {};
+        var originalVisibility = {{}};
         
-        function initializeTraceVisibility() {
-            for (var i = 0; i < plotDiv.data.length; i++) {
+        function initializeTraceVisibility() {{
+            for (var i = 0; i < plotDiv.data.length; i++) {{
                 originalVisibility[i] = plotDiv.data[i].visible !== false;
-            }
-        }
+            }}
+        }}
         
-        function getGeneTypeFromTraceName(traceName) {
+        function getGeneTypeFromTraceName(traceName) {{
             // Extract gene type from trace name (assumes trace name is the gene type)
             return traceName;
-        }
+        }}
         
-        function getTracesByGeneType(geneType) {
+        function getTracesByGeneType(geneType) {{
             var traces = [];
-            for (var i = 0; i < plotDiv.data.length; i++) {
+            for (var i = 0; i < plotDiv.data.length; i++) {{
                 if (plotDiv.data[i].name === geneType || 
-                    (plotDiv.data[i].legendgroup && plotDiv.data[i].legendgroup === geneType)) {
+                    (plotDiv.data[i].legendgroup && plotDiv.data[i].legendgroup === geneType)) {{
                     traces.push(i);
-                }
-            }
+                }}
+            }}
             return traces;
-        }
+        }}
         
-        function updateTraceVisibility() {
-            var updates = {visible: []};
+        function updateTraceVisibility() {{
+            var updates = {{visible: []}};
             var traceIndices = [];
             
-            for (var i = 0; i < plotDiv.data.length; i++) {
+            for (var i = 0; i < plotDiv.data.length; i++) {{
                 var trace = plotDiv.data[i];
                 var geneType = trace.name || trace.legendgroup;
                 var shouldBeVisible = true;
                 
-                if (exclusiveGeneType !== null) {
-                    // Exclusive mode: only show the selected gene type
+                // Always keep nuclei visible
+                if (geneType === 'Nuclei' || trace.legendgroup === 'nuclei') {{
+                    shouldBeVisible = true;
+                }} else if (exclusiveGeneType !== null) {{
+                    // Exclusive mode: only show the selected gene type (but always show nuclei)
                     shouldBeVisible = (geneType === exclusiveGeneType);
-                } else {
-                    // Normal mode: hide explicitly hidden gene types
+                }} else {{
+                    // Normal mode: hide explicitly hidden gene types (but always show nuclei)
                     shouldBeVisible = !hiddenGeneTypes.has(geneType);
-                }
+                }}
                 
                 updates.visible.push(shouldBeVisible);
                 traceIndices.push(i);
-            }
+            }}
             
             Plotly.restyle(plotDiv, updates, traceIndices);
-        }
+        }}
         
-        function updateTraceOpacity(traceIndex, selectedIds) {
+        function updateTraceOpacity(traceIndex, selectedIds) {{
             var trace = plotDiv.data[traceIndex];
             if (!trace.customdata || trace.visible === false) return;
             
@@ -1201,132 +1064,149 @@ class EmbeddingVisualizer:
             var hasSelectedPoints = false;
             var hasSelection = selectedIds.size > 0;
             
-            if (Array.isArray(trace.customdata)) {
-                for (var i = 0; i < trace.customdata.length; i++) {
-                    if (selectedIds.has(trace.customdata[i])) {
+            var isNucleiTrace = (trace.name === 'Nuclei') || (trace.legendgroup === 'nuclei');
+            if (Array.isArray(trace.customdata)) {{
+                for (var i = 0; i < trace.customdata.length; i++) {{
+                    if (selectedIds.has(trace.customdata[i])) {{
                         opacities.push(1.0);  // Full opacity for selected points
                         hasSelectedPoints = true;
-                    } else {
-                        // Much lower opacity for unselected when there's a selection
-                        opacities.push(hasSelection ? 0.05 : 0.7);
-                    }
-                }
-            } else {
+                    }} else {{
+                        // Keep nuclei visible even when not selected
+                        if (isNucleiTrace) {{
+                            opacities.push(0.7);
+                        }} else {{
+                            // Much lower opacity for unselected when there's a selection
+                            opacities.push(hasSelection ? 0.00 : 0.7);
+                        }}
+                    }}
+                }}
+            }} else {{
                 // Single value customdata
-                if (selectedIds.has(trace.customdata)) {
+                if (selectedIds.has(trace.customdata)) {{
                     opacities = 1.0;
                     hasSelectedPoints = true;
-                } else {
-                    opacities = hasSelection ? 0.05 : 0.7;
-                }
-            }
+                }} else {{
+                    // Keep nuclei visible even when not selected
+                    if (isNucleiTrace) {{
+                        opacities = 0.7;
+                    }} else {{
+                        opacities = hasSelection ? 0.00 : 0.7;
+                    }}
+                }}
+            }}
             
             // Always update opacity when there's a selection or when clearing selection
-            if (hasSelection || (!hasSelection && trace.marker && trace.marker.opacity !== 0.7)) {
-                Plotly.restyle(plotDiv, {'marker.opacity': [opacities]}, [traceIndex]);
-            }
-        }
+            if (hasSelection || (!hasSelection && trace.marker && trace.marker.opacity !== 0.7)) {{
+                Plotly.restyle(plotDiv, {{'marker.opacity': [opacities]}}, [traceIndex]);
+            }}
+        }}
         
-        function toggleGeneTypeVisibility(geneType) {
-            if (exclusiveGeneType !== null) {
+        function toggleGeneTypeVisibility(geneType) {{
+            // Don't allow hiding nuclei
+            if (geneType === 'Nuclei') {{
+                console.log('Nuclei cannot be hidden - always visible for spatial reference');
+                return;
+            }}
+            
+            if (exclusiveGeneType !== null) {{
                 // Exit exclusive mode first
                 exclusiveGeneType = null;
-            }
+            }}
             
-            if (hiddenGeneTypes.has(geneType)) {
+            if (hiddenGeneTypes.has(geneType)) {{
                 hiddenGeneTypes.delete(geneType);
-                console.log('Showing gene type:', geneType);
-            } else {
+                console.log('Showing {item_type}:', geneType);
+            }} else {{
                 hiddenGeneTypes.add(geneType);
-                console.log('Hiding gene type:', geneType);
-            }
+                console.log('Hiding {item_type}:', geneType);
+            }}
             
             updateTraceVisibility();
-        }
+        }}
         
-        function showOnlyGeneType(geneType) {
+        function showOnlyGeneType(geneType) {{
             exclusiveGeneType = geneType;
             hiddenGeneTypes.clear();
-            console.log('Exclusive view for gene type:', geneType);
+            console.log('Exclusive view for {item_type}:', geneType);
             updateTraceVisibility();
-        }
+        }}
         
-        function showAllGeneTypes() {
+        function showAllGeneTypes() {{
             exclusiveGeneType = null;
             hiddenGeneTypes.clear();
-            console.log('Showing all gene types');
+            console.log('Showing all {item_types}');
             updateTraceVisibility();
-        }
+        }}
         
         // Initialize when plot is ready
-        plotDiv.on('plotly_afterplot', function() {
+        plotDiv.on('plotly_afterplot', function() {{
             initializeTraceVisibility();
-        });
+        }});
         
         // Handle legend clicks with single/double-click detection
-        plotDiv.on('plotly_legendclick', function(eventData) {
+        plotDiv.on('plotly_legendclick', function(eventData) {{
             var geneType = eventData.data[eventData.curveNumber].name || 
                           eventData.data[eventData.curveNumber].legendgroup;
             
-            if (clickTimer) {
+            if (clickTimer) {{
                 // Double click detected
                 clearTimeout(clickTimer);
                 clickTimer = null;
                 showOnlyGeneType(geneType);
-            } else {
+            }} else {{
                 // Single click - wait to see if double click follows
-                clickTimer = setTimeout(function() {
+                clickTimer = setTimeout(function() {{
                     clickTimer = null;
                     toggleGeneTypeVisibility(geneType);
-                }, DOUBLE_CLICK_DELAY);
-            }
+                }}, DOUBLE_CLICK_DELAY);
+            }}
             
             return false; // Prevent default legend click behavior
-        });
+        }});
         
         // Handle plot area clicks to restore all gene types
-        plotDiv.on('plotly_click', function(eventData) {
-            if (!eventData.points || eventData.points.length === 0) {
+        plotDiv.on('plotly_click', function(eventData) {{
+            if (!eventData.points || eventData.points.length === 0) {{
                 // Clicked on empty area
                 showAllGeneTypes();
-            }
-        });
+            }}
+        }});
         
         // Selection synchronization with enhanced visual contrast
-        plotDiv.on('plotly_selected', function(eventData) {
+        plotDiv.on('plotly_selected', function(eventData) {{
             if (!eventData || !eventData.points || isUpdating) return;
             
             isUpdating = true;
             selectedPoints.clear();
             
             // Collect all selected point IDs
-            eventData.points.forEach(function(pt) {
-                if (pt.customdata !== undefined) {
-                    if (Array.isArray(pt.customdata)) {
+            eventData.points.forEach(function(pt) {{
+                if (pt.customdata !== undefined) {{
+                    if (Array.isArray(pt.customdata)) {{
                         selectedPoints.add(pt.customdata[pt.pointIndex]);
-                    } else {
+                    }} else {{
                         selectedPoints.add(pt.customdata);
-                    }
-                }
-            });
+                    }}
+                }}
+            }});
             
             console.log('🎯 Selected', selectedPoints.size, 'transcripts across all plots');
             
             // Update all traces with enhanced contrast
-            for (var i = 0; i < plotDiv.data.length; i++) {
+            for (var i = 0; i < plotDiv.data.length; i++) {{
                 updateTraceOpacity(i, selectedPoints);
-            }
+            }}
             
             // Provide user feedback about the selection
-            if (selectedPoints.size > 0) {
+            if (selectedPoints.size > 0) {{
                 console.log('💡 Selected transcripts are highlighted with full opacity (1.0)');
-                console.log('💡 Unselected transcripts are dimmed with low opacity (0.05)');
-            }
+                console.log('💡 Unselected transcripts are dimmed with low opacity (0.00)');
+            }}
             
             isUpdating = false;
-        });
+        }});
         
-        plotDiv.on('plotly_deselect', function() {
+        plotDiv.on('plotly_deselect', function() {{
             if (isUpdating) return;
             
             isUpdating = true;
@@ -1334,24 +1214,24 @@ class EmbeddingVisualizer:
             
             // Reset all visible traces to normal opacity using the updateTraceOpacity function
             // This ensures consistent opacity handling
-            for (var i = 0; i < plotDiv.data.length; i++) {
-                if (plotDiv.data[i].visible !== false) {
+            for (var i = 0; i < plotDiv.data.length; i++) {{
+                if (plotDiv.data[i].visible !== false) {{
                     updateTraceOpacity(i, selectedPoints);  // Empty set will restore normal opacity
-                }
-            }
+                }}
+            }}
             
             console.log('🔄 Selection cleared - all transcripts restored to normal opacity (0.7)');
             isUpdating = false;
-        });
+        }});
         
         // Add instructions
-        console.log('📊 Enhanced Interactive Dashboard Loaded!');
+        console.log('📊 Enhanced Interactive {dashboard_name} Dashboard Loaded!');
         console.log('🔍 Use lasso or box select to highlight transcripts with high contrast');
-        console.log('✨ Selected transcripts: Full opacity (1.0), Unselected: Dimmed (0.05)');
-        console.log('👆 Single click legend: Toggle gene type visibility');
-        console.log('👆👆 Double click legend: Show only that gene type (exclusive view)');
-        console.log('🎯 Click plot background: Restore all gene types');
-        console.log('💡 All selection interactions work across both TX plots simultaneously');
+        console.log('✨ Selected transcripts: Full opacity (1.0), Unselected: Dimmed (0.00)');
+        console.log('👆 Single click legend: Toggle {item_type} visibility');
+        console.log('👆👆 Double click legend: Show only that {item_type} (exclusive view)');
+        console.log('🎯 Click plot background: Restore all {item_types}');
+        console.log('💡 All selection interactions work across both plots simultaneously');
         </script>
         """
         
@@ -1614,6 +1494,72 @@ class EmbeddingVisualizer:
         return embeddings_data
 
 
+def _apply_spatial_filtering(embeddings_data: Dict[str, Dict], 
+                           spatial_region: List[float]) -> Dict[str, Dict]:
+    """
+    Apply spatial filtering to embeddings data.
+    
+    Args:
+        embeddings_data: Dictionary containing embeddings and metadata
+        spatial_region: List [x_min, x_max, y_min, y_max] for spatial filtering
+        
+    Returns:
+        Filtered embeddings data
+    """
+    if len(spatial_region) != 4:
+        raise ValueError("spatial_region must be a list of 4 values: [x_min, x_max, y_min, y_max]")
+    
+    x_min, x_max, y_min, y_max = spatial_region
+    filtered_data = {}
+    
+    for node_type, data in embeddings_data.items():
+        embeddings = data['embeddings']
+        metadata = data['metadata']
+        
+        # Check if spatial coordinates are available
+        if 'x' not in metadata.columns or 'y' not in metadata.columns:
+            print(f"Warning: No spatial coordinates found for {node_type} nodes, skipping spatial filtering")
+            filtered_data[node_type] = data
+            continue
+            
+        # Apply spatial filtering
+        x_coords = metadata['x'].values
+        y_coords = metadata['y'].values
+        
+        spatial_mask = (
+            (x_coords >= x_min) & (x_coords <= x_max) &
+            (y_coords >= y_min) & (y_coords <= y_max)
+        )
+        
+        n_original = len(metadata)
+        n_filtered = spatial_mask.sum()
+        
+        print(f"Spatial filtering {node_type}: {n_original:,} -> {n_filtered:,} nodes "
+              f"(region: x=[{x_min}, {x_max}], y=[{y_min}, {y_max}])")
+        
+        if n_filtered == 0:
+            print(f"Warning: No {node_type} nodes found in spatial region")
+            filtered_data[node_type] = {
+                'embeddings': torch.empty((0, embeddings.shape[1])),
+                'metadata': metadata.iloc[:0].copy()
+            }
+        else:
+            if node_type == 'tx':
+                # Only slice embeddings for transcripts
+                filtered_data[node_type] = {
+                    'embeddings': embeddings[spatial_mask, :],
+                    'metadata': metadata[spatial_mask].reset_index(drop=True)
+                }
+            else:
+                # For nuclei ('bd'), we only need spatial metadata; keep embeddings empty to avoid mismatches
+                filtered_data[node_type] = {
+                    'embeddings': torch.empty((0, embeddings.shape[1])),
+                    'metadata': metadata[spatial_mask].reset_index(drop=True)
+                }
+    
+    return filtered_data
+
+
 def visualize_embeddings_from_model(model: torch.nn.Module,
                                    dataloader,
                                    save_dir: Path,
@@ -1621,7 +1567,8 @@ def visualize_embeddings_from_model(model: torch.nn.Module,
                                    gene_types_dict: Optional[Dict] = None,
                                    cell_types_dict: Optional[Dict] = None,
                                    max_batches: Optional[int] = None,
-                                   config: EmbeddingVisualizationConfig = None) -> Dict[str, str]:
+                                   config: EmbeddingVisualizationConfig = None,
+                                   spatial_region: Optional[List[float]] = None) -> Dict[str, str]:
     """
     Convenience function to extract and visualize embeddings from a trained model.
     
@@ -1634,6 +1581,7 @@ def visualize_embeddings_from_model(model: torch.nn.Module,
         cell_types_dict: Mapping from cell ID to cell type
         max_batches: Maximum number of batches to process
         config: Visualization configuration
+        spatial_region: Optional list [x_min, x_max, y_min, y_max] to filter transcripts by spatial coordinates
         
     Returns:
         Dictionary mapping plot names to file paths
@@ -1645,8 +1593,9 @@ def visualize_embeddings_from_model(model: torch.nn.Module,
     visualizer = EmbeddingVisualizer(config)
 
     # If the embeddings are already saved, load them; otherwise extract them
-    if (save_dir / 'embeddings_data.pkl').exists():
-        embeddings_data = visualizer.load_embeddings(save_dir / 'embeddings_data.pkl')
+    if (save_dir / f'embeddings_data_{spatial_region[0]}_{spatial_region[1]}_{spatial_region[2]}_{spatial_region[3]}.pkl').exists():
+        embeddings_data = visualizer.load_embeddings(save_dir / f'embeddings_data_{spatial_region[0]}_{spatial_region[1]}_{spatial_region[2]}_{spatial_region[3]}.pkl')
+        print(f"Embeddings loaded from {save_dir / 'embeddings_data.pkl'}")
     else:
         extractor = EmbeddingExtractor()
         embeddings_data = extractor.extract_embeddings_from_batches(
@@ -1657,6 +1606,11 @@ def visualize_embeddings_from_model(model: torch.nn.Module,
             cell_types_dict=cell_types_dict,
             transcripts_df=transcripts_df
         )
+        print(f"Embeddings extracted and saved to {save_dir / f'embeddings_data_{spatial_region[0]}_{spatial_region[1]}_{spatial_region[2]}_{spatial_region[3]}.pkl'}")
+    # Apply spatial filtering if specified
+    if spatial_region is not None:
+        embeddings_data = _apply_spatial_filtering(embeddings_data, spatial_region)
+    
     plots = visualizer.visualize_embeddings(
         embeddings_data=embeddings_data,
         save_dir=save_dir,
@@ -1664,6 +1618,6 @@ def visualize_embeddings_from_model(model: torch.nn.Module,
     )
     
     # Save embeddings
-    visualizer.save_embeddings(embeddings_data, save_dir / 'embeddings_data.pkl')
+    visualizer.save_embeddings(embeddings_data, save_dir / f'embeddings_data_{spatial_region[0]}_{spatial_region[1]}_{spatial_region[2]}_{spatial_region[3]}.pkl')
     
     return plots

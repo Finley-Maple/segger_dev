@@ -16,7 +16,8 @@ Usage:
 """
 
 from typing import List, Tuple, Dict
-
+from pathlib import Path
+import pickle
 
 class SpatialBatchFilter:
     """Utility class for filtering batches based on spatial coordinates."""
@@ -103,7 +104,7 @@ class SpatialBatchFilter:
 def get_spatial_combined_dataloader(data_module,
                                    x_range: Tuple[float, float],
                                    y_range: Tuple[float, float],
-                                   min_transcripts: int = 1) -> List:
+                                   min_transcripts: int = 1, save_dir: Path = None) -> List:
     """
     Create a combined dataloader from train/test/val datasets for a specific spatial region.
     
@@ -116,8 +117,21 @@ def get_spatial_combined_dataloader(data_module,
     Returns:
         List of combined batches from all datasets that contain transcripts in the region
     """
-    spatial_filter = SpatialBatchFilter(data_module)
-    batch_indices = spatial_filter.get_all_region_batches(x_range, y_range, min_transcripts)
+    # Examine if the batch indices are already saved, if so, load them directly
+    
+    save_path = save_dir / f'batch_indices_x_min_{x_range[0]}_x_max_{x_range[1]}_y_min_{y_range[0]}_y_max_{y_range[1]}.pkl'
+    
+    if save_path.exists():
+        with open(save_path, 'rb') as f:
+            batch_indices = pickle.load(f)
+        print(f"Loaded batch indices from {save_path}")
+    else:
+        spatial_filter = SpatialBatchFilter(data_module)
+        batch_indices = spatial_filter.get_all_region_batches(x_range, y_range, min_transcripts)
+        
+        if save_dir:
+            with open(save_dir / f'batch_indices_x_min_{x_range[0]}_x_max_{x_range[1]}_y_min_{y_range[0]}_y_max_{y_range[1]}.pkl', 'wb') as f:
+                pickle.dump(batch_indices, f)
     
     # Create combined dataloader
     combined_batches = []

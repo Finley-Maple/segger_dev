@@ -24,16 +24,13 @@ sys.path.append(str(project_root))
 
 from segger.training.segger_data_module import SeggerDataModule
 from segger.models.segger_model import Segger
-from torch_geometric.nn import to_hetero
-from segger.training.train import LitSegger
 from visualization.embedding_visualization import (
     visualize_embeddings_from_model,
     EmbeddingVisualizationConfig,
-    EmbeddingExtractor,
-    EmbeddingVisualizer
+    EmbeddingExtractor
 )
 from visualization.embedding_callback import create_embedding_callbacks
-from utils.utils import setup_model_and_data, load_metadata, create_combined_dataloader, clear_metadata_cache, get_metadata_cache_path, VisualizationConfig
+from utils.utils import setup_model_and_data, load_metadata, clear_metadata_cache, get_metadata_cache_path, VisualizationConfig
 
 # Configure paths (adjust these to your setup)
 DATA_DIR = Path('/dkfz/cluster/gpu/data/OE0606/fengyun')
@@ -67,6 +64,8 @@ def post_training_visualization(config: VisualizationConfig, force_reload_metada
     save_dir = Path('./embedding_visualization_results') / config.dataset / config.model_type
     if config.align_loss:
         save_dir = save_dir / 'align_loss'
+    else:
+        save_dir = save_dir / 'orignal_loss'
     save_dir.mkdir(parents=True, exist_ok=True)
     
     print(f"Generating embeddings visualizations...")
@@ -85,12 +84,8 @@ def post_training_visualization(config: VisualizationConfig, force_reload_metada
             y_range = [spatial_region[2], spatial_region[3]]
             print(f"Using spatial filtering: x={x_range}, y={y_range}, min_transcripts={min_transcripts}")
             combined_dataloader = get_spatial_combined_dataloader(
-                dm, x_range=x_range, y_range=y_range, min_transcripts=min_transcripts
+                dm, x_range=x_range, y_range=y_range, min_transcripts=min_transcripts, save_dir=save_dir
             )
-        else:
-            # Load batch indices from CSV files (original behavior)
-            batch_indices = load_batch_indices_from_csvs()
-            combined_dataloader = create_combined_dataloader(dm, batch_indices)
         
         if not combined_dataloader:
             print("Warning: No batches found, falling back to random selection")
@@ -107,7 +102,8 @@ def post_training_visualization(config: VisualizationConfig, force_reload_metada
             gene_types_dict=gene_types_dict,
             cell_types_dict=cell_types_dict,
             max_batches=len(combined_dataloader),
-            config=embedding_config
+            config=embedding_config,
+            spatial_region=spatial_region
         )
         
         print(f"\nVisualization complete! Generated plots:")
@@ -159,7 +155,7 @@ def main():
         align_loss=args.align_loss,
         load_scrna_gene_types=load_scrna_gene_types,
         max_points_per_type=1000,
-        embedding_method='pca'
+        embedding_method='umap'
     )
     
     # # Optimize memory usage for align loss models

@@ -40,7 +40,7 @@ class VisualizationConfig:
     
     # Embedding visualization settings
     embedding_method: str = 'umap'
-    n_components: int = 3
+    n_components: int = 2
     figsize: tuple = (12, 8)
     point_size: float = 3.0
     alpha: float = 0.7
@@ -250,10 +250,18 @@ def load_metadata(config: VisualizationConfig, load_scrna_gene_types: bool = Tru
             try:
                 from utils.simple_gene_celltype_mapping import create_gene_celltype_dict_simple
                 print(f"Loading gene-to-cell-type mapping from scRNAseq: {scrnaseq_file}")
-                gene_types_dict = create_gene_celltype_dict_simple(
-                    str(scrnaseq_file), 
-                    celltype_column="Level1"
-                )
+                if config.dataset == 'colon':
+                    gene_types_dict = create_gene_celltype_dict_simple(
+                        str(scrnaseq_file), 
+                        celltype_column="Level1"
+                    )
+                elif config.dataset == 'breast':
+                    gene_types_dict = create_gene_celltype_dict_simple(
+                        str(scrnaseq_file), 
+                        celltype_column="celltype_major"
+                    )
+                else:
+                    raise ValueError(f"The cell type column needs to be specified for dataset {config.dataset}")
                 print(f"Loaded {len(gene_types_dict)} gene-to-cell-type mappings from scRNAseq")
             except Exception as e:
                 print(f"Warning: Could not load scRNAseq gene types: {e}")
