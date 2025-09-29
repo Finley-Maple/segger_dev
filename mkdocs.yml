@@ -1,0 +1,128 @@
+site_name: segger Documentation
+site_description: "Fast and accurate cell segmentation for single-molecule spatial omics"
+site_author: Elyas Heidari
+repo_url: https://github.com/EliHei2/segger_dev
+site_url: https://EliHei2.github.io/segger_dev/
+theme:
+  name: material
+  features:
+    - navigation.tabs
+  logo: images/logo.png
+  favicon: images/logo.png
+  font:
+    text: ubuntu
+  features:
+    # - navigation.tabs
+    - navigation.sections
+    - navigation.instant
+    - toc.integrate
+    - search.suggest
+    - search.highlight
+    - content.code.annotate
+    - content.tabs.link
+    - navigation.tracking
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: amber
+      accent: deep orange
+      toggle:
+        icon: material/brightness-7
+        name: Switch to system preference
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: amber
+      accent: deep orange
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Overview: user_guide/index.md
+      - Installation: installation.md
+      - Dataset Creation: user_guide/data_creation.md
+      - Training: user_guide/training.md
+      - Validation: user_guide/validation.md
+  - Tutorials:
+    - Sample workflow: notebooks/segger_tutorial.ipynb
+  - CLI: cli.md
+  - API Reference:
+      - Data: api/data/index.md
+      - Models: api/models/index.md
+      - Training: api/training/index.md
+      - Prediction: api/prediction/index.md
+      - Validation: api/validation/index.md
+
+plugins:
+  - search
+  - autorefs
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_root_toc_entry: true
+            show_if_no_docstring: false
+            docstring_style: google  # or numpy, to fit your style
+            separate_signature: true
+            merge_init_into_class: true  # Combines __init__ docstring into class doc
+            heading_level: 3
+  - mkdocs-jupyter:
+      include_source: True
+  - termynal:
+      prompt_literal_start:
+        - "$"
+        - ">"
+
+markdown_extensions:
+  - pymdownx.tabbed:
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.details
+  - pymdownx.inlinehilite
+  # - pymdownx.tabs
+  - pymdownx.critic
+  - pymdownx.tasklist
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.betterem
+  - pymdownx.tilde
+  - admonition        # Adds better note formatting for parameters, warnings, etc.
+  - codehilite        # Syntax highlighting for code
+  - toc               # Table of contents for better navigation
+  - pymdownx.superfences  # Handles complex nested code blocks or fenced content
+  - pymdownx.details   
+  - pymdownx.arithmatex:
+      generic: true
+  - toc:
+      permalink: true
+  - attr_list
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+
+
+extra_css:
+  - css/extra.css
+  - https://cdn.jsdelivr.net/npm/katex@0.13.11/dist/katex.min.css
+  - https://unpkg.com/termynal@0.0.1/termynal.css
+
+extra_javascript:
+  - javascripts/config.js
+  - https://polyfill.io/v3/polyfill.min.js?features=es6
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+  - https://unpkg.com/termynal@0.0.1/termynal.js
+  
