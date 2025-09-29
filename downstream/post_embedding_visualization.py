@@ -8,34 +8,24 @@ both for post-training analysis and during training with Lightning callbacks.
 import sys
 from pathlib import Path
 import argparse
-import torch
 import pandas as pd
-import glob
-import pickle
-import os
 import numpy as np
-from dataclasses import dataclass
-from typing import Optional, Dict, Any, List
-import time
 
 # Add project root to Python path
 project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
 
-from segger.training.segger_data_module import SeggerDataModule
-from segger.models.segger_model import Segger
 from visualization.embedding_visualization import (
     visualize_embeddings_from_model,
     EmbeddingVisualizationConfig,
-    EmbeddingExtractor
+    visualize_gene_embeddings_from_model
 )
-from visualization.embedding_callback import create_embedding_callbacks
 from utils.utils import setup_model_and_data, load_metadata, clear_metadata_cache, get_metadata_cache_path, VisualizationConfig
 
 # Configure paths (adjust these to your setup)
 DATA_DIR = Path('/dkfz/cluster/gpu/data/OE0606/fengyun')
 
-def post_training_visualization(config: VisualizationConfig, force_reload_metadata: bool = False, spatial_region: list = None, min_transcripts: int = 1):
+def post_training_visualization(config: VisualizationConfig, force_reload_metadata: bool = False, spatial_region: list = None, all_regions: bool = False, create_interactive_plots: bool = True, create_gene_level_plot: bool = True):
     """
     Example of how to visualize embeddings from a trained model using spatial region batches.
     """
@@ -82,9 +72,14 @@ def post_training_visualization(config: VisualizationConfig, force_reload_metada
             from utils.spatial_batch_utils import get_spatial_combined_dataloader
             x_range = [spatial_region[0], spatial_region[1]]
             y_range = [spatial_region[2], spatial_region[3]]
-            print(f"Using spatial filtering: x={x_range}, y={y_range}, min_transcripts={min_transcripts}")
+            print(f"Using spatial filtering: x={x_range}, y={y_range}, all_regions={all_regions}")
             combined_dataloader = get_spatial_combined_dataloader(
-                dm, x_range=x_range, y_range=y_range, min_transcripts=min_transcripts, save_dir=save_dir
+                dm, x_range=x_range, y_range=y_range, all_regions=all_regions, save_dir=save_dir
+            )
+        elif all_regions:
+            from utils.spatial_batch_utils import get_spatial_combined_dataloader
+            combined_dataloader = get_spatial_combined_dataloader(
+                dm, all_regions=all_regions, save_dir=save_dir
             )
         
         if not combined_dataloader:
@@ -94,17 +89,33 @@ def post_training_visualization(config: VisualizationConfig, force_reload_metada
             combined_dataloader = dm.train[batch_ids]
             print(f"Using {len(batch_ids)} random batches from training set")
         
-        plots = visualize_embeddings_from_model(
-            model=model.model,
-            dataloader=combined_dataloader,
-            save_dir=save_dir,
-            transcripts_df=transcripts,
-            gene_types_dict=gene_types_dict,
-            cell_types_dict=cell_types_dict,
-            max_batches=len(combined_dataloader),
-            config=embedding_config,
-            spatial_region=spatial_region
-        )
+        if create_gene_level_plot and create_interactive_plots == False:
+            plots = visualize_gene_embeddings_from_model(
+                model=model.model,
+                dataloader=combined_dataloader,
+                save_dir=save_dir,
+                transcripts_df=transcripts,
+                gene_types_dict=gene_types_dict,
+                max_batches=len(combined_dataloader),
+                config=embedding_config,
+                spatial_region=spatial_region,
+                min_transcript_count=1,
+                exclude_unknown=True
+            )
+        else:
+            plots = visualize_embeddings_from_model(
+                model=model.model,
+                dataloader=combined_dataloader,
+                save_dir=save_dir,
+                transcripts_df=transcripts,
+                gene_types_dict=gene_types_dict,
+                cell_types_dict=cell_types_dict,
+                max_batches=len(combined_dataloader),
+                config=embedding_config,
+                spatial_region=spatial_region,
+                create_interactive_plots=create_interactive_plots,
+                create_gene_level_plot=create_gene_level_plot
+            )
         
         print(f"\nVisualization complete! Generated plots:")
         for plot_name, plot_path in plots.items():
@@ -138,8 +149,12 @@ def main():
                         help='Clear metadata cache and exit')
     parser.add_argument('--spatial_region', nargs=4, type=float, metavar=('X_MIN', 'X_MAX', 'Y_MIN', 'Y_MAX'),
                         help='Spatial region coordinates to be visualized: x_min x_max y_min y_max (e.g., --spatial_region 2000 3000 2000 2500)')
-    parser.add_argument('--min_transcripts', type=int, default=1,
-                        help='Minimum number of transcripts required in spatial region (default: 1)')
+    parser.add_argument('--all_regions', action='store_true',
+                        help='Visualize all regions')
+    parser.add_argument('--create_interactive_plots', action='store_true',
+                        help='Create interactive Plotly dashboards')
+    parser.add_argument('--create_gene_level_plot', action='store_true',
+                        help='Create gene-level aggregated plot')
     args = parser.parse_args()
     
     # Handle cache clearing
@@ -158,12 +173,6 @@ def main():
         embedding_method='umap'
     )
     
-    # # Optimize memory usage for align loss models
-    # if config.align_loss:
-    #     config.max_points_per_type = 500  # Reduce from 1000 to 500
-    #     config.spatial_max_points_per_gene_type = 200  # Reduce from 500 to 200
-    #     print(f"  Optimized settings for align loss: max_points_per_type={config.max_points_per_type}, spatial_max_points_per_gene_type={config.spatial_max_points_per_gene_type}")
-    
     print(f"Running visualizations with configuration:")
     print(f"  Dataset: {config.dataset}")
     print(f"  Model type: {config.model_type}")
@@ -174,7 +183,8 @@ def main():
     print(f"  Output directory: ./embedding_visualization_results/{config.dataset}/{config.model_type}{'/' + 'align_loss' if config.align_loss else ''}")
     if args.spatial_region:
         print(f"  Spatial region: x=[{args.spatial_region[0]}, {args.spatial_region[1]}], y=[{args.spatial_region[2]}, {args.spatial_region[3]}]")
-        print(f"  Min transcripts: {args.min_transcripts}")
+    if args.all_regions:
+        print(f"  All regions: True")
     if config.load_scrna_gene_types:
         print(f"  → Will generate tx_embeddings_by_gene_type.png with scRNAseq cell types!")
     
@@ -192,7 +202,9 @@ def main():
             config, 
             args.force_reload_metadata, 
             spatial_region=args.spatial_region,
-            min_transcripts=args.min_transcripts
+            all_regions=args.all_regions,
+            create_interactive_plots=args.create_interactive_plots,
+            create_gene_level_plot=args.create_gene_level_plot
         )
     except Exception as e:
         print(f"Error in embedding visualization: {e}")
