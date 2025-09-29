@@ -39,7 +39,11 @@ Usage:
 
 
 XENIUM_DATA_DIR = Path("data_raw/cosmx/human_pancreas/processed/")
+<<<<<<< HEAD
 SEGGER_DATA_DIR = Path("data_tidy/pyg_datasets/cosmx_pancreas_fixed_")
+=======
+SEGGER_DATA_DIR = Path("data_tidy/pyg_datasets/cosmx_pancreas_degbugged_")
+>>>>>>> e45eb83 (Initial commit)
 # SCRNASEQ_FILE = Path('/omics/groups/OE0606/internal/mimmo/Xenium/notebooks/data/scData/bh/bh_mng_scdata_20250306.h5ad')
 # CELLTYPE_COLUMN = 'annot_v1'
 
@@ -54,7 +58,11 @@ sample = STSampleParquet(
     base_dir=XENIUM_DATA_DIR,
     n_workers=4,
     sample_type="cosmx",
+<<<<<<< HEAD
     buffer_ratio=1,
+=======
+    scale_factor=1.1,
+>>>>>>> e45eb83 (Initial commit)
     # weights=gene_celltype_abundance_embedding
 )
 
@@ -68,6 +76,14 @@ nucleus_polygons = get_polygons_from_xy(
     boundaries, "x_global_px", "y_global_px", "cell"
 )
 
+<<<<<<< HEAD
+=======
+
+cells = list(set(transcript_counts.index) &  set(nucleus_polygons.index))
+nucleus_polygons = nucleus_polygons[cells]
+transcript_counts = transcript_counts[cells]
+
+>>>>>>> e45eb83 (Initial commit)
 transcript_densities = (
     nucleus_polygons[transcript_counts.index].area / transcript_counts
 )
@@ -92,10 +108,17 @@ sample.save(
     data_dir=SEGGER_DATA_DIR,
     k_bd=3,  # Number of boundary points to connect
     dist_bd=15,  # Maximum distance for boundary connections
+<<<<<<< HEAD
     k_tx=5,  # Use calculated optimal transcript neighbors
     dist_tx=70,  # Use calculated optimal search radius
     tile_width=1000,  # Tile size for processing,
     tile_height=1000,  # Tile size for processing
+=======
+    k_tx=10,  # Use calculated optimal transcript neighbors
+    dist_tx=10,  # Use calculated optimal search radius
+    tile_width=200,  # Tile size for processing,
+    tile_height=200,  # Tile size for processing
+>>>>>>> e45eb83 (Initial commit)
     neg_sampling_ratio=10.0,  # 5:1 negative:positive samples
     frac=1.0,  # Use all data
     val_prob=0.3,  # 30% validation set

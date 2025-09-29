@@ -6,8 +6,11 @@ import numpy as np
 import torch.nn.functional as F
 import torch._dynamo
 import gc
+<<<<<<< HEAD
 
 # import rmm
+=======
+>>>>>>> e45eb83 (Initial commit)
 import re
 import glob
 from pathlib import Path
@@ -26,7 +29,11 @@ from segger.training.segger_data_module import SeggerDataModule
 from segger.prediction.boundary import generate_boundaries
 
 from scipy.sparse.csgraph import connected_components as cc
+<<<<<<< HEAD
 from typing import Union, Dict
+=======
+from typing import Union, Dict, Tuple
+>>>>>>> e45eb83 (Initial commit)
 import dask.dataframe as dd
 from dask import delayed
 from dask.diagnostics import ProgressBar
@@ -183,6 +190,10 @@ def load_model(checkpoint_path: str) -> LitSegger:
     # Load model from checkpoint
     lit_segger = LitSegger.load_from_checkpoint(
         checkpoint_path=checkpoint_path,
+<<<<<<< HEAD
+=======
+        strict=False
+>>>>>>> e45eb83 (Initial commit)
     )
 
     return lit_segger
@@ -287,14 +298,27 @@ def get_similarity_scores(
             # shape = batch[from_type].x.shape[0], batch[to_type].x.shape[0]
             indices = torch.argwhere(edge_index != -1).T
             indices[1] = edge_index[edge_index != -1]
+<<<<<<< HEAD
             rows = cp.fromDlpack(to_dlpack(indices[0, :].to("cuda")))
             columns = cp.fromDlpack(to_dlpack(indices[1, :].to("cuda")))
+=======
+            indices_gpu = indices.to("cuda")  # Keep reference
+            rows = cp.fromDlpack(to_dlpack(indices_gpu[0, :]))
+            columns = cp.fromDlpack(to_dlpack(indices_gpu[1, :]))
+            del indices_gpu  # Delete only after CuPy arrays exist
+            stream = cp.cuda.get_current_stream()
+            stream.synchronize()  # <-- ADD THIS
+>>>>>>> e45eb83 (Initial commit)
             # print(rows)
             del indices
             values = similarity[edge_index != -1].flatten()
             sparse_result = coo_matrix(
                 (cp.fromDlpack(to_dlpack(values)), (rows, columns)), shape=shape
             )
+<<<<<<< HEAD
+=======
+            stream.synchronize()
+>>>>>>> e45eb83 (Initial commit)
             return sparse_result
             # Free GPU memory after computation
 
@@ -364,13 +388,22 @@ def predict_batch(
             # Convert sparse matrix to dense format (on GPU)
             dense_scores = scores.toarray()  # Convert to dense NumPy array
             del scores  # Remove from memory
+<<<<<<< HEAD
             cp.get_default_memory_pool().free_all_blocks()  # Free CuPy memory
+=======
+            cp.cuda.Stream.null.synchronize()
+            # cp.get_default_memory_pool().free_all_blocks()  # Free CuPy memory
+>>>>>>> e45eb83 (Initial commit)
 
             # Step 2: Maximize score and assign transcripts based on score threshold
             belongs = cp.max(dense_scores, axis=1)  # Max score per transcript
             assignments["score"] = cp.asnumpy(belongs)  # Move back to CPU
 
             mask = assignments["score"] >= score_cut  # Mask for assigned transcripts
+<<<<<<< HEAD
+=======
+            cp.cuda.Stream.null.synchronize()
+>>>>>>> e45eb83 (Initial commit)
             all_ids = np.concatenate(batch["bd"].id)  # Boundary IDs as NumPy array
             assignments["segger_cell_id"] = np.where(
                 mask, all_ids[cp.argmax(dense_scores, axis=1).get()], None
@@ -378,7 +411,11 @@ def predict_batch(
 
             # Clear memory after score processing
             del dense_scores
+<<<<<<< HEAD
             cp.get_default_memory_pool().free_all_blocks()  # Free CuPy memory
+=======
+            # cp.get_default_memory_pool().free_all_blocks()  # Free CuPy memory
+>>>>>>> e45eb83 (Initial commit)
             torch.cuda.empty_cache()
 
             assignments["bound"] = np.where(
@@ -470,7 +507,11 @@ def predict_batch(
             delayed_write_output_ddf.persist()  # Schedule writing
 
             # Free memory after computation
+<<<<<<< HEAD
             cp.get_default_memory_pool().free_all_blocks()  # Free CuPy memory
+=======
+            # cp.get_default_memory_pool().free_all_blocks()  # Free CuPy memory
+>>>>>>> e45eb83 (Initial commit)
             torch.cuda.empty_cache()
 
 
@@ -578,7 +619,11 @@ def segment(
         elapsed_time = time() - step_start_time
         print(f"Batch processing completed in {elapsed_time:.2f} seconds.")
 
+<<<<<<< HEAD
     seg_final_dd = pd.read_parquet(output_ddf_save_path)
+=======
+    # seg_final_dd = pd.read_parquet(output_ddf_save_path)
+>>>>>>> e45eb83 (Initial commit)
 
     step_start_time = time()
     if verbose:

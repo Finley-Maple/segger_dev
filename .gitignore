@@ -110,6 +110,30 @@ ipython_config.py
 .pdm.toml
 .pdm-python
 .pdm-build/
+<<<<<<< HEAD
+=======
+.pre-commit-config.yaml
+.prettierignore
+.python_version
+.bash_history
+.bash_logout
+.gitconfig
+.bash_profile
+.bashrc
+.emacs
+.lesshst
+.zcompdump
+.zshrc
+check_quota.sh
+cleanup.sh
+.cache/
+.config
+.cursor-server/
+.ipython/
+.ssh/
+.local/
+fySegger/
+>>>>>>> e45eb83 (Initial commit)
 
 # PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
 __pypackages__/
@@ -172,11 +196,36 @@ figure*
 dev*
 .DS_Store
 .idea/
+<<<<<<< HEAD
+=======
+.cache/
+.vscode/
+.vscode-server/
+>>>>>>> e45eb83 (Initial commit)
 
 
 # Custom
 *_old*
 .dev
+<<<<<<< HEAD
 
 scripts/*
 .scripts/*
+=======
+lightning_logs/
+*.pkl
+.cursor
+
+# intermediate data
+intermediate_data/
+
+# scripts/*
+.scripts/*
+
+models/*
+
+# visualization results
+*.png
+*.pdf
+*.html
+>>>>>>> e45eb83 (Initial commit)

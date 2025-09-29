@@ -17,8 +17,15 @@ from lightning import LightningModule
 
 
 
+<<<<<<< HEAD
 segger_data_dir = segger_data_dir = Path("data_tidy/pyg_datasets/human_CRC_full")
 models_dir = Path("./models/human_CRC")
+=======
+
+
+segger_data_dir = Path("data_tidy/pyg_datasets/xe_bc_rep1_loss_emb2")
+models_dir = Path("./models/xe_bc_rep1_loss_emb2")
+>>>>>>> e45eb83 (Initial commit)
 
 # Base directory to store Pytorch Lightning models
 # models_dir = Path('models')
@@ -26,7 +33,11 @@ models_dir = Path("./models/human_CRC")
 # Initialize the Lightning data module
 dm = SeggerDataModule(
     data_dir=segger_data_dir,
+<<<<<<< HEAD
     batch_size=2,
+=======
+    batch_size=1,
+>>>>>>> e45eb83 (Initial commit)
     num_workers=2,
 )
 
@@ -35,6 +46,7 @@ dm.setup()
 # is_token_based = True
 # num_tx_tokens = 500
 
+<<<<<<< HEAD
 # If you use custom gene embeddings, use the following two lines instead:
 is_token_based = False
 # num_tx_tokens = (
@@ -46,17 +58,40 @@ model = Segger(
     # is_token_based=is_token_based,
     num_tx_tokens= 850,
     init_emb=8,
+=======
+# # If you use custom gene embeddings, use the following two lines instead:
+is_token_based = False
+num_tx_tokens = (
+    dm.train[0].x_dict["tx"].shape[1]
+)  # Set the number of tokens to the number of genes
+
+
+model = Segger(
+    num_tx_tokens=num_tx_tokens,
+    # num_tx_tokens= 600,
+    init_emb=16,
+>>>>>>> e45eb83 (Initial commit)
     hidden_channels=64,
     out_channels=16,
     heads=4,
     num_mid_layers=3,
 )
+<<<<<<< HEAD
 model = to_hetero(model, (["tx", "bd"], [("tx", "belongs", "bd"), ("tx", "neighbors", "tx")]), aggr="sum")
+=======
+model = to_hetero(model, (["tx", "bd"], [("tx", "belongs", "bd"), ("tx", "neighbors", "tx")]), aggr="mean")
+>>>>>>> e45eb83 (Initial commit)
 
 batch = dm.train[0]
 model.forward(batch.x_dict, batch.edge_index_dict)
 # Wrap the model in LitSegger
+<<<<<<< HEAD
 ls = LitSegger(model=model)
+=======
+ls = LitSegger(model=model, align_loss=True, align_lambda=.5, cycle_length=10000)
+
+
+>>>>>>> e45eb83 (Initial commit)
 
 # # Initialize the Lightning model
 # ls = LitSegger(
@@ -73,9 +108,15 @@ ls = LitSegger(model=model)
 trainer = Trainer(
     accelerator="gpu",
     strategy="auto",
+<<<<<<< HEAD
     precision="16-mixed",
     devices=4,  # set higher number if more gpus are available
     max_epochs=100,
+=======
+    precision="32",
+    devices=1,  # set higher number if more gpus are available
+    max_epochs=500,
+>>>>>>> e45eb83 (Initial commit)
     default_root_dir=models_dir,
     logger=CSVLogger(models_dir),
 )

@@ -223,8 +223,12 @@ class BoundaryIdentification:
                 simplex_id = list(edges[current_edge]["simplices"].keys())[0]
                 simplex = d.simplices[simplex_id]
                 if (
+<<<<<<< HEAD
                     edges[current_edge]["length"] > 1.5 * d_max
                     and edges[current_edge]["simplices"][simplex_id] > 90
+=======
+                    edges[current_edge]["length"] > 1.5 * d_max and edges[current_edge]["simplices"][simplex_id] > 90
+>>>>>>> e45eb83 (Initial commit)
                 ) or edges[current_edge]["simplices"][simplex_id] > 180 - 180 / 16:
 
                     # delete edge and the simplex start
@@ -260,9 +264,13 @@ class BoundaryIdentification:
             if len(cycles) == 1:
                 geom = Polygon(self.d.points[cycles[0]])
             else:
+<<<<<<< HEAD
                 geom = MultiPolygon(
                     [Polygon(self.d.points[c]) for c in cycles if len(c) >= 3]
                 )
+=======
+                geom = MultiPolygon([Polygon(self.d.points[c]) for c in cycles if len(c) >= 3])
+>>>>>>> e45eb83 (Initial commit)
         except Exception as e:
             print(e, cycles)
             return None
@@ -332,6 +340,7 @@ def generate_boundaries(df, x="x_location", y="y_location", cell_id="segger_cell
     res = []
     group_df = df.groupby(cell_id)
     for cell_id, t in tqdm(group_df, total=group_df.ngroups):
+<<<<<<< HEAD
         res.append(
             {
                 "cell_id": cell_id,
@@ -339,6 +348,9 @@ def generate_boundaries(df, x="x_location", y="y_location", cell_id="segger_cell
                 "geom": generate_boundary(t, x=x, y=y),
             }
         )
+=======
+        res.append({"cell_id": cell_id, "length": len(t), "geom": generate_boundary(t, x=x, y=y)})
+>>>>>>> e45eb83 (Initial commit)
 
     return gpd.GeoDataFrame(
         data=[[b["cell_id"], b["length"]] for b in res],
@@ -350,7 +362,10 @@ def generate_boundaries(df, x="x_location", y="y_location", cell_id="segger_cell
 def generate_boundary(t, x="x_location", y="y_location"):
     if len(t) < 3:
         return None
+<<<<<<< HEAD
 
+=======
+>>>>>>> e45eb83 (Initial commit)
     bi = BoundaryIdentification(t[[x, y]].values)
     bi.calculate_part_1(plot=False)
     bi.calculate_part_2(plot=False)
@@ -359,6 +374,7 @@ def generate_boundary(t, x="x_location", y="y_location"):
     return geom
 
 
+<<<<<<< HEAD
 if __name__ == "__main__":
     points = np.array(
         [
@@ -380,3 +396,11 @@ if __name__ == "__main__":
     angles = triangle_angles_from_points(points, triangles)
     print("Angles of each triangle (in degrees):")
     print(angles)
+=======
+
+
+def extract_largest_polygon(geom):
+    if isinstance(geom, MultiPolygon):
+        return max(geom.geoms, key=lambda p: p.area)  # Keep the largest polygon
+    return geom  # Keep the original polygon if it's already a Polygon
+>>>>>>> e45eb83 (Initial commit)

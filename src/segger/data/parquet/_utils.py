@@ -1,16 +1,30 @@
 import pandas as pd
 import geopandas as gpd
 import shapely
+<<<<<<< HEAD
 from pyarrow import parquet as pq
 import numpy as np
 import scipy as sp
 from typing import Optional, List
+=======
+from shapely.affinity import scale
+from pyarrow import parquet as pq
+import numpy as np
+import scipy as sp
+from typing import Optional, List, Dict, Tuple, Set, Sequence
+>>>>>>> e45eb83 (Initial commit)
 import sys
 from types import SimpleNamespace
 from pathlib import Path
 import yaml
 import os
 import pyarrow as pa
+<<<<<<< HEAD
+=======
+import scanpy as sc
+import anndata as ad
+from itertools import combinations
+>>>>>>> e45eb83 (Initial commit)
 
 
 def get_xy_extents(
@@ -127,11 +141,30 @@ def read_parquet_region(
 
     columns = list({x, y} | set(extra_columns))
 
+<<<<<<< HEAD
     region = pd.read_parquet(
         filepath,
         filters=filters,
         columns=columns,
     )
+=======
+    # Check if 'Geometry', 'geometry', 'polygon', or 'Polygon' is in the columns
+    if any(col in columns for col in ['Geometry', 'geometry', 'polygon', 'Polygon']):
+        import geopandas as gpd
+        # If geometry columns are present, read with geopandas
+        region = gpd.read_parquet(
+            filepath,
+            filters=filters,
+            columns=columns,
+        )
+    else:
+        # Otherwise, read with pandas
+        region = pd.read_parquet(
+            filepath,
+            filters=filters,
+            columns=columns,
+        )
+>>>>>>> e45eb83 (Initial commit)
     return region
 
 
@@ -140,7 +173,11 @@ def get_polygons_from_xy(
     x: str,
     y: str,
     label: str,
+<<<<<<< HEAD
     buffer_ratio: float = 1.0,
+=======
+    scale_factor: float = 1.0,
+>>>>>>> e45eb83 (Initial commit)
 ) -> gpd.GeoSeries:
     """
     Convert boundary coordinates from a DataFrame to a GeoSeries of polygons.
@@ -156,8 +193,13 @@ def get_polygons_from_xy(
         The name of the column representing the y-coordinate.
     label : str
         The name of the column representing the cell or nucleus label.
+<<<<<<< HEAD
     buffer_ratio : float, optional
         A ratio to expand or shrink the polygons. A value of 1.0 means no change,
+=======
+    scale_factor : float, optional
+        A ratio to scale the polygons. A value of 1.0 means no change,
+>>>>>>> e45eb83 (Initial commit)
         greater than 1.0 expands the polygons, and less than 1.0 shrinks the polygons
         (default is 1.0).
 
@@ -181,6 +223,7 @@ def get_polygons_from_xy(
     )
     gs = gpd.GeoSeries(polygons, index=np.unique(ids))
 
+<<<<<<< HEAD
     if buffer_ratio != 1.0:
         # Calculate buffer distance based on polygon area
         areas = gs.area
@@ -194,6 +237,20 @@ def get_polygons_from_xy(
             ],
             index=gs.index,
         )
+=======
+    # print(gs)
+
+    if scale_factor != 1.0:
+        # Scale polygons around their centroid
+        gs = gpd.GeoSeries(
+            [
+                scale(geom, xfact=scale_factor, yfact=scale_factor, origin='centroid')
+                for geom in gs
+            ],
+            index=gs.index,
+        )
+        # print(gs)
+>>>>>>> e45eb83 (Initial commit)
 
     return gs
 
@@ -498,3 +555,295 @@ def ensure_transcript_ids(
             write_statistics=True,  # Ensure statistics are written
             compression="snappy",  # Use snappy compression for better performance
         )
+<<<<<<< HEAD
+=======
+
+
+
+def find_markers(
+    adata: ad.AnnData,
+    cell_type_column: str,
+    pos_percentile: float = 5,
+    neg_percentile: float = 10,
+    percentage: float = 50,
+) -> Dict[str, Dict[str, List[str]]]:
+    """
+    Identify positive and negative marker genes for each cell type in an AnnData object.
+    
+    Positive markers are top-ranked genes that are expressed in at least
+    `percentage` percent of cells in the given cell type.
+    
+    Parameters
+    ----------
+    adata : AnnData
+        Annotated data object containing gene expression data and cell type annotations.
+    cell_type_column : str
+        Name of the column in `adata.obs` specifying cell type identity for each cell.
+    pos_percentile : float, optional (default: 5)
+        Percentile threshold for selecting top highly expressed genes as positive markers.
+    neg_percentile : float, optional (default: 10)
+        Percentile threshold for selecting lowest expressed genes as negative markers.
+    percentage : float, optional (default: 50)
+        Minimum percent of cells (0-100) in a cell type expressing a gene for it to be a marker.
+    
+    Returns
+    -------
+    markers : dict
+        Dictionary mapping cell type names to:
+            {
+                'positive': [list of positive marker gene names],
+                'negative': [list of negative marker gene names]
+            }
+    """
+    markers = {}
+    sc.tl.rank_genes_groups(adata, groupby=cell_type_column)
+    genes = np.array(adata.var_names)
+    n_genes = adata.shape[1]
+
+    # Work with a dense matrix for expression fraction calculation
+    # (convert sparse to dense if needed)
+    if not isinstance(adata.X, np.ndarray):
+        expr_matrix = adata.X.toarray()
+    else:
+        expr_matrix = adata.X
+
+    for cell_type in adata.obs[cell_type_column].unique():
+        mask = (adata.obs[cell_type_column] == cell_type).values
+        gene_names = np.array(adata.uns['rank_genes_groups']['names'][cell_type])
+        
+        n_pos = max(1, int(n_genes * pos_percentile // 100))
+        n_neg = max(1, int(n_genes * neg_percentile // 100))
+        
+        # Calculate percent of cells in this cell type expressing each gene
+        expr_frac = (expr_matrix[mask] > 0).mean(axis=0) * 100  # as percent
+        
+        # Filter positive markers by expression fraction
+        pos_indices = []
+        for idx in range(n_pos):
+            gene = gene_names[idx]
+            gene_idx = np.where(genes == gene)[0][0]
+            if expr_frac[gene_idx] >= percentage:
+                pos_indices.append(idx)
+        positive_markers = list(gene_names[pos_indices])
+        
+        # Negative markers are the lowest-ranked
+        negative_markers = list(gene_names[-n_neg:])
+
+        markers[cell_type] = {
+            "positive": positive_markers,
+            "negative": negative_markers
+        }
+    return markers
+
+def find_mutually_exclusive_genes(
+    adata: ad.AnnData, markers: Dict[str, Dict[str, List[str]]], cell_type_column: str
+) -> List[Tuple[str, str]]:
+    """Identify mutually exclusive genes based on expression criteria.
+
+    Args:
+    - adata: AnnData
+        Annotated data object containing gene expression data.
+    - markers: dict
+        Dictionary where keys are cell types and values are dictionaries containing:
+            'positive': list of top x% highly expressed genes
+            'negative': list of top x% lowly expressed genes.
+    - cell_type_column: str
+        Column name in `adata.obs` that specifies cell types.
+
+    Returns:
+    - exclusive_pairs: list
+        List of mutually exclusive gene pairs.
+    """
+    exclusive_genes = {}
+    all_exclusive = []
+    gene_expression = adata.to_df()
+    for cell_type, marker_sets in markers.items():
+        positive_markers = marker_sets["positive"]
+        exclusive_genes[cell_type] = []
+        for gene in positive_markers:
+            gene_expr = adata[:, gene].X
+            cell_type_mask = adata.obs[cell_type_column] == cell_type
+            non_cell_type_mask = ~cell_type_mask
+            if (gene_expr[cell_type_mask] > 0).mean() > 0.2 and (
+                gene_expr[non_cell_type_mask] > 0
+            ).mean() < 0.05:
+                exclusive_genes[cell_type].append(gene)
+                all_exclusive.append(gene)
+    unique_genes = list(
+        {
+            gene
+            for i in exclusive_genes.keys()
+            for gene in exclusive_genes[i]
+            if gene in all_exclusive
+        }
+    )
+    filtered_exclusive_genes = {
+        i: [gene for gene in exclusive_genes[i] if gene in unique_genes]
+        for i in exclusive_genes.keys()
+    }
+    mutually_exclusive_gene_pairs = [
+        tuple(sorted((gene1, gene2)))
+        for key1, key2 in combinations(filtered_exclusive_genes.keys(), 2)
+        if key1 != key2
+        for gene1 in filtered_exclusive_genes[key1]
+        for gene2 in filtered_exclusive_genes[key2]
+    ]
+    return set(mutually_exclusive_gene_pairs)
+
+
+
+# def find_mutually_exclusive_genes(
+#     adata: ad.AnnData, threshold: float = 0.0001
+# ) -> List[Tuple[str, str]]:
+#     """Identify pairs of genes with coexpression below a specified threshold.
+
+#     Args:
+#     - adata: AnnData
+#         Annotated data object containing gene expression data.
+#     - threshold: float
+#         Coexpression threshold below which gene pairs are considered.
+
+#     Returns:
+#     - low_coexpression_pairs: list
+#         List of gene pairs with low coexpression.
+#     """
+#     gene_expression = adata.to_df()
+#     genes = gene_expression.columns
+#     low_coexpression_pairs = []
+
+#     for gene1, gene2 in combinations(genes, 2):
+#         expr1 = gene_expression[gene1] > 0
+#         expr2 = gene_expression[gene2] > 0
+#         coexpression = (expr1 * expr2).mean()
+
+#         if coexpression < threshold * (expr1.mean() + expr2.mean()):
+#             low_coexpression_pairs.append(tuple(sorted((gene1, gene2))))
+
+#     return set(low_coexpression_pairs)
+
+
+
+# def find_mutually_exclusive_genes(
+#     adata: ad.AnnData,
+#     *,
+#     threshold: float = 1e-4,
+#     expr_cutoff: float = 0.0,
+#     block_size: int = 2048,
+# ) -> Set[Tuple[str, str]]:
+#     """
+#     Identify gene pairs (i, j) with coexpression below a specified threshold:
+#         mean( expr_i & expr_j )  <  threshold * ( mean(expr_i) + mean(expr_j) )
+#     computed via matrix operations on (cells x genes) data.
+
+#     Parameters
+#     ----------
+#     adata : AnnData
+#         Cells x Genes matrix (adata.X or adata.layers[layer]).
+#     threshold : float, default 1e-4
+#         Coexpression threshold weight for RHS.
+#     layer : str or None, default None
+#         Use adata.layers[layer] if provided; otherwise adata.X.
+#     genes : sequence of str or None
+#         Optional subset/order of genes to evaluate.
+#     expr_cutoff : float, default 0.0
+#         A cell expresses a gene if value > expr_cutoff.
+#     block_size : int, default 2048
+#         Number of genes per block for the blockwise sparse multiplication
+#         to control memory (recommended: 1k–10k depending on RAM).
+
+#     Returns
+#     -------
+#     low_coexp_pairs : set of (gene_i, gene_j)
+#         Gene name pairs with i < j (lexicographic order preserved by indices).
+#     """
+#     # Select matrix and (optionally) subset genes
+#     layer = None
+#     genes = None 
+#     X = adata.layers[layer] if layer is not None else adata.X
+#     if genes is not None:
+#         adata = adata[:, list(genes)]
+#         X = adata.layers[layer] if layer is not None else adata.X
+
+#     var_names = adata.var_names
+#     n_cells, n_genes = adata.n_obs, adata.n_vars
+
+#     # Binarize to a boolean CSR: expressed if > expr_cutoff
+#     if sp.issparse(X):
+#         Xb = X.tocsr().astype(np.float32)
+#         Xb.data = (Xb.data > expr_cutoff).astype(np.uint8)
+#         Xb.eliminate_zeros()
+#     else:
+#         Xb = sp.csr_matrix((X > expr_cutoff).astype(np.uint8))
+
+#     # Per-gene expression fraction p(gene) = mean over cells
+#     colsum = np.asarray(Xb.sum(axis=0)).ravel().astype(np.int64)  # counts of expressing cells
+#     p = colsum / float(n_cells)  # shape (G,)
+
+#     # We'll scan genes in blocks: for each block B, compute (Xb.T_B @ Xb) -> (B x G) intersection counts
+#     result_pairs: Set[Tuple[str, str]] = set()
+#     tN = threshold * n_cells  # scale to compare counts on LHS
+
+#     for start in range(0, n_genes, block_size):
+#         stop = min(start + block_size, n_genes)
+#         # (cells x B)
+#         Xb_block = Xb[:, start:stop]  # CSR
+#         # Intersection counts for the block against all genes: (B x G)
+#         inter_BG = (Xb_block.T @ Xb).tocoo()
+
+#         # Build RHS for the whole block as a dense (B x G) using outer sums p_block[:,None] + p[None,:]
+#         p_block = p[start:stop]  # (B,)
+#         rhs_BG = tN * (p_block[:, None] + p[None, :])  # dense small block
+
+#         # We need to test ALL pairs i in block, j in [0..G), not just where inter_BG has nonzeros.
+#         # Strategy:
+#         #   1) Start by assuming inter_ij = 0 for all pairs in the block (since absent in sparse).
+#         #      For those, condition is: 0 < rhs_BG[i,j]  -> typically true unless rhs==0.
+#         #   2) Then overwrite where we DO have nonzero intersections with the actual counts and re-test.
+#         #
+#         # Step 1: zero-intersection candidates (exclude diagonal and ensure i<j)
+#         # We'll create a mask and then remove positions that are actually nonzero via a scatter step.
+
+#         # Mask all positions initially; we'll clear diagonal and lower-triangle later
+#         zero_mask = np.ones((stop - start, n_genes), dtype=bool)
+
+#         # Clear the places where intersection is nonzero (we'll handle them separately)
+#         zero_mask[inter_BG.row, inter_BG.col] = False
+
+#         # Condition for zero-intersection pairs
+#         # NOTE: We only add pairs where rhs > 0 (else the inequality cannot hold).
+#         cand_mask = zero_mask & (rhs_BG > 0)
+
+#         # Enforce i < j (global indices)
+#         # Convert to global indices and filter upper triangle
+#         if np.any(cand_mask):
+#             rows, cols = np.where(cand_mask)
+#             gi = rows + start
+#             gj = cols
+#             keep = gi < gj
+#             gi, gj = gi[keep], gj[keep]
+#             # Add pairs
+#             for ii, jj in zip(gi, gj):
+#                 result_pairs.add((var_names[ii], var_names[jj]))
+
+#         # Step 2: handle nonzero intersections from inter_BG
+#         if inter_BG.nnz:
+#             gi = inter_BG.row + start
+#             gj = np.asarray(inter_BG.col)
+#             # Enforce i < j and exclude diagonal
+#             keep = gi < gj
+#             gi, gj = gi[keep], gj[keep]
+#             inter_vals = inter_BG.data[keep].astype(np.float64)
+
+#             # Compare: inter_ij  <  tN * (p_i + p_j)
+#             rhs_vals = tN * (p[gi] + p[gj])
+#             mask = inter_vals < rhs_vals
+
+#             for ii, jj, ok in zip(gi, gj, mask):
+#                 if ok:
+#                     result_pairs.add((var_names[ii], var_names[jj]))
+
+#         # help GC
+#         del Xb_block, inter_BG, rhs_BG, zero_mask, cand_mask
+
+#     return result_pairs
+>>>>>>> e45eb83 (Initial commit)
