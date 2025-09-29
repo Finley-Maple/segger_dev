@@ -193,6 +193,9 @@ figure*
 dev*
 .DS_Store
 .idea/
+.cache/
+.vscode/
+.vscode-server/
 
 
 # Custom
