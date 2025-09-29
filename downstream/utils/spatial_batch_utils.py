@@ -104,7 +104,7 @@ class SpatialBatchFilter:
 def get_spatial_combined_dataloader(data_module,
                                    x_range: Tuple[float, float],
                                    y_range: Tuple[float, float],
-                                   min_transcripts: int = 1, save_dir: Path = None) -> List:
+                                   all_regions: bool = False, save_dir: Path = None) -> List:
     """
     Create a combined dataloader from train/test/val datasets for a specific spatial region.
     
@@ -117,6 +117,15 @@ def get_spatial_combined_dataloader(data_module,
     Returns:
         List of combined batches from all datasets that contain transcripts in the region
     """
+    if all_regions:
+        # directly combine all batches
+        combined_batches = []
+        for dataset in ['train', 'test', 'val']:
+            dataloader = getattr(data_module, dataset)
+            combined_batches.extend(dataloader)
+        print(f"Created combined dataloader with {len(combined_batches)} total batches")
+        return combined_batches
+    
     # Examine if the batch indices are already saved, if so, load them directly
     
     save_path = save_dir / f'batch_indices_x_min_{x_range[0]}_x_max_{x_range[1]}_y_min_{y_range[0]}_y_max_{y_range[1]}.pkl'
@@ -127,7 +136,7 @@ def get_spatial_combined_dataloader(data_module,
         print(f"Loaded batch indices from {save_path}")
     else:
         spatial_filter = SpatialBatchFilter(data_module)
-        batch_indices = spatial_filter.get_all_region_batches(x_range, y_range, min_transcripts)
+        batch_indices = spatial_filter.get_all_region_batches(x_range, y_range, min_transcripts=1)
         
         if save_dir:
             with open(save_dir / f'batch_indices_x_min_{x_range[0]}_x_max_{x_range[1]}_y_min_{y_range[0]}_y_max_{y_range[1]}.pkl', 'wb') as f:
