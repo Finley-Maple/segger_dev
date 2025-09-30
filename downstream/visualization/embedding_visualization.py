@@ -818,7 +818,7 @@ class EmbeddingVisualizer:
         try:
             import wandb  # type: ignore
             if getattr(wandb, "run", None) is not None and getattr(wandb.run, "dir", None):
-                save_dir = Path(wandb.run.dir)
+                save_dir = Path(wandb.run.dir) / 'embeddings_plots'
         except Exception:
             pass
 
@@ -826,7 +826,7 @@ class EmbeddingVisualizer:
         try:
             import wandb  # type: ignore
             if getattr(wandb, "run", None) is not None and getattr(wandb.run, "dir", None):
-                save_dir = Path(wandb.run.dir)
+                save_dir = Path(wandb.run.dir) / 'embeddings_plots'
         except Exception:
             pass
 

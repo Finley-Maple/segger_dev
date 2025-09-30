@@ -1,10 +1,5 @@
 import torch
 from torch_geometric.nn import GATv2Conv, Linear
-<<<<<<< HEAD
-from torch.nn import Embedding
-from torch import Tensor
-from typing import Union
-=======
 from torch import Tensor 
 from typing import Union, Dict, Tuple, Optional
 from torch.nn import (
@@ -13,15 +8,10 @@ from torch.nn import (
     Module,
     functional as F
 )
->>>>>>> e45eb83 (Initial commit)
 
 # from torch_sparse import SparseTensor
 
 
-<<<<<<< HEAD
-=======
-
->>>>>>> e45eb83 (Initial commit)
 class Segger(torch.nn.Module):
     def __init__(
         self,
@@ -76,11 +66,7 @@ class Segger(torch.nn.Module):
         )
         # self.lin_last = Linear(-1, out_channels * heads)
 
-<<<<<<< HEAD
-    def forward(self, x: Tensor, edge_index: Tensor) -> Tensor:
-=======
     def forward(self, x: Tensor, edge_index: Tensor) -> tuple[Tensor, list]:
->>>>>>> e45eb83 (Initial commit)
         """
         Forward pass for the Segger model.
 
@@ -89,16 +75,11 @@ class Segger(torch.nn.Module):
             edge_index (Tensor): Edge indices.
 
         Returns:
-<<<<<<< HEAD
-            Tensor: Output node embeddings.
-        """
-=======
             Tensor: (Output node embeddings, list of (edge_index, attention_weights) tuples or empty list).
         """
         # record the attention weights
         attention_weights = []
         
->>>>>>> e45eb83 (Initial commit)
         x = torch.nan_to_num(x, nan=0)
         is_one_dim = (x.ndim == 1) * 1
         x = x[:, None]
@@ -106,30 +87,15 @@ class Segger(torch.nn.Module):
             ((x.sum(-1) * is_one_dim).int())
         ) * is_one_dim + self.lin0(x.float()) * (1 - is_one_dim)
         x = x.squeeze()
-<<<<<<< HEAD
-        # First layer
-        x = x.relu()
-        x = self.conv_first(x, edge_index)  # + self.lin_first(x)
-=======
         x = x.relu()
         # First layer
         x, (edge_index_first, alpha_first) = self.conv_first(x, edge_index, return_attention_weights=True)  # + self.lin_first(x)
         attention_weights.append((edge_index_first, alpha_first))
->>>>>>> e45eb83 (Initial commit)
         x = x.relu()
 
         # Middle layers
         if self.num_mid_layers > 0:
             for conv_mid in self.conv_mid_layers:
-<<<<<<< HEAD
-                x = conv_mid(x, edge_index)  # + lin_mid(x)
-                x = x.relu()
-
-        # Last layer
-        x = self.conv_last(x, edge_index)  # + self.lin_last(x)
-
-        return x
-=======
                 x, (edge_index_mid, alpha_mid) = conv_mid(x, edge_index, return_attention_weights=True)  # + lin_mid(x)
                 attention_weights.append((edge_index_mid, alpha_mid))
                 x = x.relu()
@@ -138,7 +104,6 @@ class Segger(torch.nn.Module):
         attention_weights.append((edge_index_last, alpha_last))
 
         return x, attention_weights
->>>>>>> e45eb83 (Initial commit)
 
     def decode(self, z: Tensor, edge_index: Union[Tensor]) -> Tensor:
         """
@@ -151,8 +116,4 @@ class Segger(torch.nn.Module):
         Returns:
             Tensor: Predicted edge values.
         """
-<<<<<<< HEAD
         return (z[edge_index[0]] * z[edge_index[1]]).sum(dim=-1)
-=======
-        return (z[edge_index[0]] * z[edge_index[1]]).sum(dim=-1)
->>>>>>> e45eb83 (Initial commit)

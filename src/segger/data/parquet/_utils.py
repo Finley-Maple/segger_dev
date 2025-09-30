@@ -1,30 +1,20 @@
 import pandas as pd
 import geopandas as gpd
 import shapely
-<<<<<<< HEAD
-from pyarrow import parquet as pq
-import numpy as np
-import scipy as sp
-from typing import Optional, List
-=======
 from shapely.affinity import scale
 from pyarrow import parquet as pq
 import numpy as np
 import scipy as sp
 from typing import Optional, List, Dict, Tuple, Set, Sequence
->>>>>>> e45eb83 (Initial commit)
 import sys
 from types import SimpleNamespace
 from pathlib import Path
 import yaml
 import os
 import pyarrow as pa
-<<<<<<< HEAD
-=======
 import scanpy as sc
 import anndata as ad
 from itertools import combinations
->>>>>>> e45eb83 (Initial commit)
 
 
 def get_xy_extents(
@@ -141,13 +131,6 @@ def read_parquet_region(
 
     columns = list({x, y} | set(extra_columns))
 
-<<<<<<< HEAD
-    region = pd.read_parquet(
-        filepath,
-        filters=filters,
-        columns=columns,
-    )
-=======
     # Check if 'Geometry', 'geometry', 'polygon', or 'Polygon' is in the columns
     if any(col in columns for col in ['Geometry', 'geometry', 'polygon', 'Polygon']):
         import geopandas as gpd
@@ -164,7 +147,6 @@ def read_parquet_region(
             filters=filters,
             columns=columns,
         )
->>>>>>> e45eb83 (Initial commit)
     return region
 
 
@@ -173,11 +155,7 @@ def get_polygons_from_xy(
     x: str,
     y: str,
     label: str,
-<<<<<<< HEAD
-    buffer_ratio: float = 1.0,
-=======
     scale_factor: float = 1.0,
->>>>>>> e45eb83 (Initial commit)
 ) -> gpd.GeoSeries:
     """
     Convert boundary coordinates from a DataFrame to a GeoSeries of polygons.
@@ -193,13 +171,8 @@ def get_polygons_from_xy(
         The name of the column representing the y-coordinate.
     label : str
         The name of the column representing the cell or nucleus label.
-<<<<<<< HEAD
-    buffer_ratio : float, optional
-        A ratio to expand or shrink the polygons. A value of 1.0 means no change,
-=======
     scale_factor : float, optional
         A ratio to scale the polygons. A value of 1.0 means no change,
->>>>>>> e45eb83 (Initial commit)
         greater than 1.0 expands the polygons, and less than 1.0 shrinks the polygons
         (default is 1.0).
 
@@ -223,21 +196,6 @@ def get_polygons_from_xy(
     )
     gs = gpd.GeoSeries(polygons, index=np.unique(ids))
 
-<<<<<<< HEAD
-    if buffer_ratio != 1.0:
-        # Calculate buffer distance based on polygon area
-        areas = gs.area
-        # Use the square root of the area to get a linear distance
-        buffer_distances = np.sqrt(areas / np.pi) * (buffer_ratio - 1.0)
-        # Apply buffer to each polygon with its specific distance
-        gs = gpd.GeoSeries(
-            [
-                geom.buffer(dist) if dist != 0 else geom
-                for geom, dist in zip(gs, buffer_distances)
-            ],
-            index=gs.index,
-        )
-=======
     # print(gs)
 
     if scale_factor != 1.0:
@@ -250,7 +208,6 @@ def get_polygons_from_xy(
             index=gs.index,
         )
         # print(gs)
->>>>>>> e45eb83 (Initial commit)
 
     return gs
 
@@ -555,8 +512,6 @@ def ensure_transcript_ids(
             write_statistics=True,  # Ensure statistics are written
             compression="snappy",  # Use snappy compression for better performance
         )
-<<<<<<< HEAD
-=======
 
 
 
@@ -846,4 +801,3 @@ def find_mutually_exclusive_genes(
 #         del Xb_block, inter_BG, rhs_BG, zero_mask, cand_mask
 
 #     return result_pairs
->>>>>>> e45eb83 (Initial commit)

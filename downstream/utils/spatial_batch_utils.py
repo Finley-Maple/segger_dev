@@ -102,8 +102,8 @@ class SpatialBatchFilter:
 
 
 def get_spatial_combined_dataloader(data_module,
-                                   x_range: Tuple[float, float],
-                                   y_range: Tuple[float, float],
+                                   x_range: Tuple[float, float] = None,
+                                   y_range: Tuple[float, float] = None,
                                    all_regions: bool = False, save_dir: Path = None) -> List:
     """
     Create a combined dataloader from train/test/val datasets for a specific spatial region.
