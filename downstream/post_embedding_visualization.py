@@ -25,7 +25,7 @@ from utils.utils import setup_model_and_data, load_metadata, clear_metadata_cach
 # Configure paths (adjust these to your setup)
 DATA_DIR = Path('/dkfz/cluster/gpu/data/OE0606/fengyun')
 
-def post_training_visualization(config: VisualizationConfig, force_reload_metadata: bool = False, spatial_region: list = None, all_regions: bool = False, create_interactive_plots: bool = True, create_gene_level_plot: bool = True):
+def post_training_visualization(config: VisualizationConfig, force_reload_metadata: bool = True, spatial_region: list = None, all_regions: bool = False, create_interactive_plots: bool = True, create_gene_level_plot: bool = True):
     """
     Example of how to visualize embeddings from a trained model using spatial region batches.
     """
@@ -77,19 +77,15 @@ def post_training_visualization(config: VisualizationConfig, force_reload_metada
                 dm, x_range=x_range, y_range=y_range, all_regions=all_regions, save_dir=save_dir
             )
         elif all_regions:
+            
             from utils.spatial_batch_utils import get_spatial_combined_dataloader
+            print(f"Using all regions...")
             combined_dataloader = get_spatial_combined_dataloader(
                 dm, all_regions=all_regions, save_dir=save_dir
             )
         
-        if not combined_dataloader:
-            print("Warning: No batches found, falling back to random selection")
-            batch_count = 40
-            batch_ids = np.random.choice(len(dm.train), batch_count, replace=False)
-            combined_dataloader = dm.train[batch_ids]
-            print(f"Using {len(batch_ids)} random batches from training set")
-        
-        if create_gene_level_plot and create_interactive_plots == False:
+        if create_gene_level_plot:
+            print(f"Creating gene-level plot...")
             plots = visualize_gene_embeddings_from_model(
                 model=model.model,
                 dataloader=combined_dataloader,
@@ -102,7 +98,8 @@ def post_training_visualization(config: VisualizationConfig, force_reload_metada
                 min_transcript_count=1,
                 exclude_unknown=True
             )
-        else:
+        if create_interactive_plots:
+            print(f"Creating interactive plots...")
             plots = visualize_embeddings_from_model(
                 model=model.model,
                 dataloader=combined_dataloader,
@@ -112,9 +109,7 @@ def post_training_visualization(config: VisualizationConfig, force_reload_metada
                 cell_types_dict=cell_types_dict,
                 max_batches=len(combined_dataloader),
                 config=embedding_config,
-                spatial_region=spatial_region,
-                create_interactive_plots=create_interactive_plots,
-                create_gene_level_plot=create_gene_level_plot
+                spatial_region=spatial_region
             )
         
         print(f"\nVisualization complete! Generated plots:")
@@ -197,17 +192,14 @@ def main():
         print(f"  📁 Metadata cache: {cache_path} ({'will be created' if not args.force_reload_metadata else 'disabled'})")
     
     # Run embedding visualization
-    try:
-        post_training_visualization(
-            config, 
-            args.force_reload_metadata, 
-            spatial_region=args.spatial_region,
-            all_regions=args.all_regions,
-            create_interactive_plots=args.create_interactive_plots,
-            create_gene_level_plot=args.create_gene_level_plot
-        )
-    except Exception as e:
-        print(f"Error in embedding visualization: {e}")
+    post_training_visualization(
+        config, 
+        args.force_reload_metadata, 
+        spatial_region=args.spatial_region,
+        all_regions=args.all_regions,
+        create_interactive_plots=args.create_interactive_plots,
+        create_gene_level_plot=args.create_gene_level_plot
+    )
 
 
 if __name__ == '__main__':

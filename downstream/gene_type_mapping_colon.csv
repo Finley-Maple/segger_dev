@@ -1,0 +1,1248 @@
+gene_name,gene_type
+ARFGAP3,B cells
+ATP2A3,B cells
+ATXN1,B cells
+BLK,B cells
+CASP10,B cells
+CCDC69,B cells
+CCPG1,B cells
+CD27,B cells
+CD38,B cells
+CD79A,B cells
+CD79B,B cells
+CDK14,B cells
+CDK5RAP3,B cells
+CDKN1B,B cells
+CDV3,B cells
+CHPF,B cells
+CHST15,B cells
+CLPTM1L,B cells
+CPEB4,B cells
+CPNE5,B cells
+CREB3L2,B cells
+CRELD2,B cells
+CSF2RB,B cells
+CYBC1,B cells
+DENND5B,B cells
+DERL1,B cells
+DERL3,B cells
+DNAJB11,B cells
+DNAJB9,B cells
+DNAJC1,B cells
+DNAJC3,B cells
+DUSP22,B cells
+DUSP5,B cells
+EAF2,B cells
+EDEM1,B cells
+EDEM3,B cells
+EIF2AK3,B cells
+ELL2,B cells
+EMP3,B cells
+ERLEC1,B cells
+ERN1,B cells
+EVI2B,B cells
+FAM214A,B cells
+FAM30A,B cells
+FAM3C,B cells
+FBXW7,B cells
+FCRL2,B cells
+FCRL5,B cells
+FKBP11,B cells
+FNDC3A,B cells
+FNDC3B,B cells
+FUT8,B cells
+GLCCI1,B cells
+GMPPB,B cells
+GNG7,B cells
+GPR15,B cells
+H1FX,B cells
+HDLBP,B cells
+HERPUD1,B cells
+HIPK2,B cells
+HM13,B cells
+HSH2D,B cells
+HSP90B1,B cells
+HSPA13,B cells
+HYOU1,B cells
+ICAM3,B cells
+IFNAR2,B cells
+IGHA1,B cells
+IGHA2,B cells
+IGHG1,B cells
+IGHM,B cells
+IGKC,B cells
+IGLC1,B cells
+IRF4,B cells
+ISG20,B cells
+ITGB7,B cells
+JCHAIN,B cells
+KCNA3,B cells
+KCNN3,B cells
+KLHL6,B cells
+KRTCAP2,B cells
+LAX1,B cells
+LMAN1,B cells
+LMAN2,B cells
+MAN1A1,B cells
+MANEA,B cells
+MANF,B cells
+MAPKAPK2,B cells
+MEF2C,B cells
+METTL7A,B cells
+MGAT2,B cells
+MS4A1,B cells
+MYDGF,B cells
+MZB1,B cells
+NCOA3,B cells
+NUCB2,B cells
+NUGGC,B cells
+ORAI2,B cells
+OS9,B cells
+P2RX5,B cells
+PCMTD1,B cells
+PDIA6,B cells
+PDK1,B cells
+PIM2,B cells
+PLCG2,B cells
+PLPP5,B cells
+POU2AF1,B cells
+POU2F2,B cells
+PPIB,B cells
+PRDM1,B cells
+PRDX4,B cells
+PRKCB,B cells
+PTK2B,B cells
+RAB30,B cells
+RABAC1,B cells
+RALGPS2,B cells
+RHOH,B cells
+RPN1,B cells
+RUNX2,B cells
+SDC1,B cells
+SDF2L1,B cells
+SEC11C,B cells
+SEC14L1,B cells
+SEC24A,B cells
+SEC61A1,B cells
+SEC61B,B cells
+SEC62,B cells
+SEL1L,B cells
+SEL1L3,B cells
+SELENOK,B cells
+SELENOS,B cells
+SEMA4A,B cells
+SERP1,B cells
+SLAMF7,B cells
+SLC17A9,B cells
+SLC1A4,B cells
+SLC38A10,B cells
+SMAP2,B cells
+SP140,B cells
+SPATS2,B cells
+SPCS1,B cells
+SPCS3,B cells
+SRM,B cells
+SRPRA,B cells
+SRPRB,B cells
+SSR2,B cells
+SSR3,B cells
+SSR4,B cells
+ST6GAL1,B cells
+STT3A,B cells
+SYTL1,B cells
+SYVN1,B cells
+TAGAP,B cells
+TCF3,B cells
+TENT5C,B cells
+TMED9,B cells
+TNFRSF13B,B cells
+TNFRSF17,B cells
+TP53INP1,B cells
+TRAM1,B cells
+TRAM2,B cells
+TRIB1,B cells
+TSC22D3,B cells
+TXNDC11,B cells
+TXNDC15,B cells
+TXNDC5,B cells
+UBE2J1,B cells
+UFM1,B cells
+USP48,B cells
+VOPP1,B cells
+XBP1,B cells
+ZBP1,B cells
+ACKR1,Endothelial
+ADAM15,Endothelial
+ADAMTS9,Endothelial
+ADCY4,Endothelial
+ADGRF5,Endothelial
+ADGRL4,Endothelial
+AFAP1L1,Endothelial
+AQP1,Endothelial
+ARHGAP23,Endothelial
+ARHGAP29,Endothelial
+ARHGAP31,Endothelial
+ARHGEF15,Endothelial
+BCAM,Endothelial
+BMPR2,Endothelial
+CALCRL,Endothelial
+CAV1,Endothelial
+CAV2,Endothelial
+CAVIN1,Endothelial
+CAVIN2,Endothelial
+CCL14,Endothelial
+CD34,Endothelial
+CDH5,Endothelial
+CFI,Endothelial
+CLDN5,Endothelial
+CLEC14A,Endothelial
+CRIM1,Endothelial
+CRIP2,Endothelial
+CYB5R3,Endothelial
+CYYR1,Endothelial
+DCHS1,Endothelial
+DIPK2B,Endothelial
+DOCK6,Endothelial
+DOCK9,Endothelial
+ECE1,Endothelial
+ECSCR,Endothelial
+EGFL7,Endothelial
+EHD4,Endothelial
+ELK3,Endothelial
+EMCN,Endothelial
+ENTPD1,Endothelial
+EPAS1,Endothelial
+EPHB4,Endothelial
+ERG,Endothelial
+ESAM,Endothelial
+FGD5,Endothelial
+FLT1,Endothelial
+FLT4,Endothelial
+FZD4,Endothelial
+GJA1,Endothelial
+GNG11,Endothelial
+GRASP,Endothelial
+HDAC7,Endothelial
+HECW2,Endothelial
+HEG1,Endothelial
+HYAL2,Endothelial
+ID1,Endothelial
+ID3,Endothelial
+IFITM2,Endothelial
+IGFBP3,Endothelial
+IL3RA,Endothelial
+JAG2,Endothelial
+JAM2,Endothelial
+KDR,Endothelial
+KLF2,Endothelial
+LDB2,Endothelial
+LIFR,Endothelial
+LMO2,Endothelial
+LRRC32,Endothelial
+MCF2L,Endothelial
+MCTP1,Endothelial
+MMRN1,Endothelial
+MMRN2,Endothelial
+MTUS1,Endothelial
+MYCT1,Endothelial
+NECTIN2,Endothelial
+NEDD9,Endothelial
+NES,Endothelial
+NFIB,Endothelial
+NOTCH1,Endothelial
+NPDC1,Endothelial
+NPR1,Endothelial
+NR2F2,Endothelial
+PALM2-AKAP2,Endothelial
+PCDH17,Endothelial
+PIK3R3,Endothelial
+PLVAP,Endothelial
+PODXL,Endothelial
+PREX2,Endothelial
+PRSS23,Endothelial
+PTMS,Endothelial
+PTPRB,Endothelial
+PTPRM,Endothelial
+PXN,Endothelial
+RAMP2,Endothelial
+RAMP3,Endothelial
+RAPGEF5,Endothelial
+RASIP1,Endothelial
+RGS3,Endothelial
+RHOC,Endothelial
+RHOJ,Endothelial
+RIPOR1,Endothelial
+ROBO4,Endothelial
+S1PR1,Endothelial
+SCARF1,Endothelial
+SELENON,Endothelial
+SELENOW,Endothelial
+SEMA3F,Endothelial
+SEMA6B,Endothelial
+SHANK3,Endothelial
+SHC1,Endothelial
+SHE,Endothelial
+SLC9A3R2,Endothelial
+SLCO2A1,Endothelial
+SNRK,Endothelial
+SOX18,Endothelial
+SPNS2,Endothelial
+SPRY1,Endothelial
+STOM,Endothelial
+SULF2,Endothelial
+SWAP70,Endothelial
+SYNPO,Endothelial
+TCF4,Endothelial
+TEK,Endothelial
+TGFBR2,Endothelial
+THBD,Endothelial
+TIE1,Endothelial
+TINAGL1,Endothelial
+TJP1,Endothelial
+TM4SF1,Endothelial
+TMEM255B,Endothelial
+VEGFC,Endothelial
+VWF,Endothelial
+YBX3,Endothelial
+ADAMTS2,Fibroblast
+ADGRA2,Fibroblast
+ADH1B,Fibroblast
+AEBP1,Fibroblast
+ANGPTL2,Fibroblast
+ANTXR1,Fibroblast
+ANXA5,Fibroblast
+AXL,Fibroblast
+BGN,Fibroblast
+C11orf96,Fibroblast
+C1R,Fibroblast
+C1S,Fibroblast
+C3,Fibroblast
+C7,Fibroblast
+CCDC80,Fibroblast
+CCN1,Fibroblast
+CCN2,Fibroblast
+CD248,Fibroblast
+CDH11,Fibroblast
+CEBPB,Fibroblast
+CERCAM,Fibroblast
+CFD,Fibroblast
+CFH,Fibroblast
+CLMP,Fibroblast
+COL12A1,Fibroblast
+COL14A1,Fibroblast
+COL1A2,Fibroblast
+COL5A2,Fibroblast
+COL8A1,Fibroblast
+CSF1,Fibroblast
+CTHRC1,Fibroblast
+CTSK,Fibroblast
+CXCL12,Fibroblast
+CXCL14,Fibroblast
+CYBRD1,Fibroblast
+CYGB,Fibroblast
+DCN,Fibroblast
+DLC1,Fibroblast
+DPT,Fibroblast
+ECM1,Fibroblast
+EFEMP1,Fibroblast
+ELN,Fibroblast
+FBLN1,Fibroblast
+FBLN2,Fibroblast
+FBLN5,Fibroblast
+FILIP1L,Fibroblast
+FKBP10,Fibroblast
+FNDC1,Fibroblast
+GGT5,Fibroblast
+GPC6,Fibroblast
+GREM1,Fibroblast
+HIC1,Fibroblast
+HTRA3,Fibroblast
+IGFBP6,Fibroblast
+IL1R1,Fibroblast
+INHBA,Fibroblast
+ISLR,Fibroblast
+ITGAV,Fibroblast
+ITGB5,Fibroblast
+JUNB,Fibroblast
+KIRREL1,Fibroblast
+LAMA2,Fibroblast
+LGALS1,Fibroblast
+LHFPL6,Fibroblast
+LOXL2,Fibroblast
+LRP1,Fibroblast
+LTBP2,Fibroblast
+LUM,Fibroblast
+MFAP2,Fibroblast
+MFAP4,Fibroblast
+MFGE8,Fibroblast
+MMP14,Fibroblast
+MMP19,Fibroblast
+MMP2,Fibroblast
+MRC2,Fibroblast
+MXRA5,Fibroblast
+NFIC,Fibroblast
+NOTCH3,Fibroblast
+OAF,Fibroblast
+OGN,Fibroblast
+OLFML3,Fibroblast
+OSMR,Fibroblast
+PAM,Fibroblast
+PCDH18,Fibroblast
+PCOLCE,Fibroblast
+PDGFRA,Fibroblast
+PDGFRB,Fibroblast
+PDPN,Fibroblast
+PKD2,Fibroblast
+PLAT,Fibroblast
+PODN,Fibroblast
+POSTN,Fibroblast
+PTGDS,Fibroblast
+PTGIS,Fibroblast
+QSOX1,Fibroblast
+RHOBTB3,Fibroblast
+SDC2,Fibroblast
+SERPINF1,Fibroblast
+SFRP2,Fibroblast
+SOD2,Fibroblast
+SPON2,Fibroblast
+SRPX,Fibroblast
+STEAP2,Fibroblast
+SULF1,Fibroblast
+SVEP1,Fibroblast
+TCF21,Fibroblast
+THBS2,Fibroblast
+THY1,Fibroblast
+TIMP1,Fibroblast
+VCAM1,Fibroblast
+VCAN,Fibroblast
+ABCC3,Intestinal Epithelial
+ACSS2,Intestinal Epithelial
+ADH1C,Intestinal Epithelial
+ADTRP,Intestinal Epithelial
+AGR2,Intestinal Epithelial
+AGR3,Intestinal Epithelial
+AHCYL2,Intestinal Epithelial
+AMN,Intestinal Epithelial
+AOC1,Intestinal Epithelial
+ATP10B,Intestinal Epithelial
+ATP2C2,Intestinal Epithelial
+ATP8B1,Intestinal Epithelial
+B3GNT7,Intestinal Epithelial
+C10orf99,Intestinal Epithelial
+C15orf48,Intestinal Epithelial
+C19orf33,Intestinal Epithelial
+CA12,Intestinal Epithelial
+CA2,Intestinal Epithelial
+CANT1,Intestinal Epithelial
+CAPN5,Intestinal Epithelial
+CAST,Intestinal Epithelial
+CCL28,Intestinal Epithelial
+CDC42EP5,Intestinal Epithelial
+CDHR5,Intestinal Epithelial
+CDX1,Intestinal Epithelial
+CEACAM7,Intestinal Epithelial
+CES2,Intestinal Epithelial
+CHP2,Intestinal Epithelial
+CLCA1,Intestinal Epithelial
+CMBL,Intestinal Epithelial
+CREB3L1,Intestinal Epithelial
+CTNND1,Intestinal Epithelial
+DDR1,Intestinal Epithelial
+DHRS11,Intestinal Epithelial
+DSC2,Intestinal Epithelial
+ECH1,Intestinal Epithelial
+EPB41L4B,Intestinal Epithelial
+EPS8L2,Intestinal Epithelial
+EPS8L3,Intestinal Epithelial
+ERN2,Intestinal Epithelial
+ETHE1,Intestinal Epithelial
+FABP1,Intestinal Epithelial
+FAM162A,Intestinal Epithelial
+FCGBP,Intestinal Epithelial
+FRYL,Intestinal Epithelial
+GCNT3,Intestinal Epithelial
+GGT6,Intestinal Epithelial
+GMDS,Intestinal Epithelial
+GOLM1,Intestinal Epithelial
+GPA33,Intestinal Epithelial
+HEPH,Intestinal Epithelial
+HK2,Intestinal Epithelial
+HMGCS2,Intestinal Epithelial
+HSD11B2,Intestinal Epithelial
+HSD17B11,Intestinal Epithelial
+IMPA2,Intestinal Epithelial
+INAVA,Intestinal Epithelial
+KIAA1324,Intestinal Epithelial
+KIAA1522,Intestinal Epithelial
+KLF4,Intestinal Epithelial
+KLK1,Intestinal Epithelial
+KRT19,Intestinal Epithelial
+KRT20,Intestinal Epithelial
+LEFTY1,Intestinal Epithelial
+LGR4,Intestinal Epithelial
+LIMA1,Intestinal Epithelial
+LIPH,Intestinal Epithelial
+MAOA,Intestinal Epithelial
+MGST1,Intestinal Epithelial
+MT-ND2,Intestinal Epithelial
+MT1G,Intestinal Epithelial
+MUC1,Intestinal Epithelial
+MUC2,Intestinal Epithelial
+MUC4,Intestinal Epithelial
+MUC5B,Intestinal Epithelial
+MYO1A,Intestinal Epithelial
+MYO1D,Intestinal Epithelial
+MYO7B,Intestinal Epithelial
+NANS,Intestinal Epithelial
+NEDD4L,Intestinal Epithelial
+NR3C2,Intestinal Epithelial
+NRARP,Intestinal Epithelial
+NXPE1,Intestinal Epithelial
+NXPE4,Intestinal Epithelial
+OLFM4,Intestinal Epithelial
+PADI2,Intestinal Epithelial
+PAPSS2,Intestinal Epithelial
+PARM1,Intestinal Epithelial
+PCK1,Intestinal Epithelial
+PIGR,Intestinal Epithelial
+PLA2G2A,Intestinal Epithelial
+PLAC8,Intestinal Epithelial
+PLS1,Intestinal Epithelial
+PPP1R1B,Intestinal Epithelial
+PRR15L,Intestinal Epithelial
+PTPRF,Intestinal Epithelial
+RBM47,Intestinal Epithelial
+S100A16,Intestinal Epithelial
+SCNN1A,Intestinal Epithelial
+SCP2,Intestinal Epithelial
+SELENBP1,Intestinal Epithelial
+SERINC2,Intestinal Epithelial
+SH3BGRL2,Intestinal Epithelial
+SIAE,Intestinal Epithelial
+SLC26A2,Intestinal Epithelial
+SLC26A3,Intestinal Epithelial
+SLC44A1,Intestinal Epithelial
+SLC44A4,Intestinal Epithelial
+SLC4A4,Intestinal Epithelial
+SQOR,Intestinal Epithelial
+SRI,Intestinal Epithelial
+SULT1B1,Intestinal Epithelial
+SYTL2,Intestinal Epithelial
+TCEA3,Intestinal Epithelial
+TDP2,Intestinal Epithelial
+TFCP2L1,Intestinal Epithelial
+TFF3,Intestinal Epithelial
+TM9SF3,Intestinal Epithelial
+TMEM141,Intestinal Epithelial
+TMEM45B,Intestinal Epithelial
+TMEM54,Intestinal Epithelial
+TMPRSS2,Intestinal Epithelial
+TMPRSS4,Intestinal Epithelial
+TRPM4,Intestinal Epithelial
+TSPAN1,Intestinal Epithelial
+TSPAN3,Intestinal Epithelial
+UGDH,Intestinal Epithelial
+UGT2B17,Intestinal Epithelial
+UQCRC1,Intestinal Epithelial
+VSIG2,Intestinal Epithelial
+WFDC2,Intestinal Epithelial
+ZG16,Intestinal Epithelial
+ABCA1,Myeloid
+ACP5,Myeloid
+ADAP2,Myeloid
+AIF1,Myeloid
+ALOX5,Myeloid
+AOAH,Myeloid
+APLP2,Myeloid
+APOE,Myeloid
+ARRB2,Myeloid
+ASAH1,Myeloid
+ATP6V1B2,Myeloid
+C1QA,Myeloid
+C1QB,Myeloid
+C1QC,Myeloid
+C3AR1,Myeloid
+C5AR1,Myeloid
+CAPG,Myeloid
+CCDC88A,Myeloid
+CD14,Myeloid
+CD163,Myeloid
+CD209,Myeloid
+CD300A,Myeloid
+CD68,Myeloid
+CIITA,Myeloid
+CLEC7A,Myeloid
+COLGALT1,Myeloid
+CPM,Myeloid
+CPVL,Myeloid
+CREG1,Myeloid
+CSF1R,Myeloid
+CSF2RA,Myeloid
+CSF3R,Myeloid
+CST3,Myeloid
+CTSB,Myeloid
+CTSC,Myeloid
+CTSD,Myeloid
+CTSH,Myeloid
+CTSL,Myeloid
+CTSS,Myeloid
+CTSZ,Myeloid
+CXCL16,Myeloid
+CYBB,Myeloid
+CYTH4,Myeloid
+DAB2,Myeloid
+DMXL2,Myeloid
+DPYD,Myeloid
+DSE,Myeloid
+EMILIN2,Myeloid
+F13A1,Myeloid
+FCER1G,Myeloid
+FCGR2A,Myeloid
+FCGR3A,Myeloid
+FCGRT,Myeloid
+FGD2,Myeloid
+FGL2,Myeloid
+FMN1,Myeloid
+FOLR2,Myeloid
+FPR1,Myeloid
+FPR3,Myeloid
+FUCA1,Myeloid
+GAA,Myeloid
+GLUL,Myeloid
+GM2A,Myeloid
+GNS,Myeloid
+GPR34,Myeloid
+GRN,Myeloid
+HAVCR2,Myeloid
+HCK,Myeloid
+HMOX1,Myeloid
+ICAM1,Myeloid
+IFI30,Myeloid
+IFNGR1,Myeloid
+IGSF6,Myeloid
+IRF8,Myeloid
+ITGAX,Myeloid
+ITM2B,Myeloid
+ITPR2,Myeloid
+LAIR1,Myeloid
+LGMN,Myeloid
+LILRB2,Myeloid
+LIPA,Myeloid
+LITAF,Myeloid
+LPAR6,Myeloid
+LYZ,Myeloid
+M6PR,Myeloid
+MAF,Myeloid
+MAFB,Myeloid
+MAN2B1,Myeloid
+MCL1,Myeloid
+MERTK,Myeloid
+METRNL,Myeloid
+MFSD1,Myeloid
+MGAT1,Myeloid
+MPEG1,Myeloid
+MPP1,Myeloid
+MRC1,Myeloid
+MS4A4A,Myeloid
+MS4A6A,Myeloid
+MS4A7,Myeloid
+MSR1,Myeloid
+NCF2,Myeloid
+NCF4,Myeloid
+NCKAP1L,Myeloid
+NINJ1,Myeloid
+NPC2,Myeloid
+PIK3AP1,Myeloid
+PLA2G7,Myeloid
+PLAUR,Myeloid
+PLD3,Myeloid
+PLEK,Myeloid
+PLEKHO2,Myeloid
+PLTP,Myeloid
+PLXNC1,Myeloid
+PPT1,Myeloid
+PSAP,Myeloid
+RGS2,Myeloid
+RNF130,Myeloid
+RNF149,Myeloid
+S100A9,Myeloid
+SAT1,Myeloid
+SDC3,Myeloid
+SERPINA1,Myeloid
+SGK1,Myeloid
+SIGLEC1,Myeloid
+SIGLEC10,Myeloid
+SIRPA,Myeloid
+SLAMF8,Myeloid
+SLC15A3,Myeloid
+SLC16A3,Myeloid
+SLC7A7,Myeloid
+SLCO2B1,Myeloid
+SPI1,Myeloid
+TCN2,Myeloid
+TGFBI,Myeloid
+TLR2,Myeloid
+TNFAIP2,Myeloid
+TNFSF13,Myeloid
+TPP1,Myeloid
+TTYH3,Myeloid
+TYMP,Myeloid
+TYROBP,Myeloid
+VASH1,Myeloid
+VSIG4,Myeloid
+AATK,Neuronal
+ABCA6,Neuronal
+ABCA8,Neuronal
+ADAMTSL1,Neuronal
+ADGRB3,Neuronal
+ADGRG6,Neuronal
+AFAP1L2,Neuronal
+AHNAK,Neuronal
+ALCAM,Neuronal
+ALDH1A1,Neuronal
+ANK2,Neuronal
+ANK3,Neuronal
+AP1S2,Neuronal
+ASAP2,Neuronal
+ASPA,Neuronal
+ATP1A2,Neuronal
+BCL2,Neuronal
+C1orf198,Neuronal
+C2orf88,Neuronal
+CADM1,Neuronal
+CADM2,Neuronal
+CADM3,Neuronal
+CDH19,Neuronal
+CDH2,Neuronal
+CDK9,Neuronal
+CHL1,Neuronal
+CLIC4,Neuronal
+CLU,Neuronal
+CNP,Neuronal
+COL21A1,Neuronal
+COL27A1,Neuronal
+COL28A1,Neuronal
+COL5A3,Neuronal
+COL9A3,Neuronal
+CTNNAL1,Neuronal
+DDX17,Neuronal
+DHRS3,Neuronal
+DMD,Neuronal
+DOCK5,Neuronal
+EFS,Neuronal
+EGFL8,Neuronal
+EHBP1,Neuronal
+ENDOD1,Neuronal
+EPB41L2,Neuronal
+FOXO1,Neuronal
+FRMD4A,Neuronal
+FSTL3,Neuronal
+FXYD1,Neuronal
+GABBR1,Neuronal
+GFRA1,Neuronal
+GFRA3,Neuronal
+GINS3,Neuronal
+GNG2,Neuronal
+GPC1,Neuronal
+GPM6B,Neuronal
+GPR155,Neuronal
+GRIK2,Neuronal
+GRIK3,Neuronal
+HMCN1,Neuronal
+INF2,Neuronal
+INSC,Neuronal
+ITGB8,Neuronal
+ITPR3,Neuronal
+JUND,Neuronal
+KCNK5,Neuronal
+KCNMB4,Neuronal
+KIAA1217,Neuronal
+KLF6,Neuronal
+L1CAM,Neuronal
+LGI4,Neuronal
+LHFPL2,Neuronal
+LPAR1,Neuronal
+MAL,Neuronal
+MAN2A2,Neuronal
+MAP1B,Neuronal
+MAP4,Neuronal
+MAPRE2,Neuronal
+MEGF6,Neuronal
+MICALL2,Neuronal
+MMP17,Neuronal
+MOXD1,Neuronal
+MPZ,Neuronal
+NCAM1,Neuronal
+NDRG2,Neuronal
+NGFR,Neuronal
+NPTX2,Neuronal
+NRBP2,Neuronal
+NRXN1,Neuronal
+NRXN3,Neuronal
+OLFML2A,Neuronal
+PAPPA,Neuronal
+PCSK1N,Neuronal
+PDGFA,Neuronal
+PLP1,Neuronal
+PMEPA1,Neuronal
+PPFIBP1,Neuronal
+PRIMA1,Neuronal
+PRKCA,Neuronal
+PRNP,Neuronal
+PTPN12,Neuronal
+PTPRZ1,Neuronal
+S100B,Neuronal
+S1PR3,Neuronal
+SCARA3,Neuronal
+SCCPDH,Neuronal
+SCN7A,Neuronal
+SCN9A,Neuronal
+SEMA3B,Neuronal
+SEMA3C,Neuronal
+SEMA4B,Neuronal
+SFRP5,Neuronal
+SH3PXD2A,Neuronal
+SHISA9,Neuronal
+SLC22A17,Neuronal
+SLC35F1,Neuronal
+SNCA,Neuronal
+SORCS1,Neuronal
+SOX10,Neuronal
+SPP1,Neuronal
+SPRY2,Neuronal
+STARD13,Neuronal
+SYT11,Neuronal
+TMEM71,Neuronal
+TMOD2,Neuronal
+TOM1L2,Neuronal
+TPPP3,Neuronal
+TRIM9,Neuronal
+TSPAN11,Neuronal
+TUBB2B,Neuronal
+WDR86,Neuronal
+XKR4,Neuronal
+ZMAT1,Neuronal
+ZSWIM6,Neuronal
+ABL1,Smooth Muscle
+ACACB,Smooth Muscle
+ACTG2,Smooth Muscle
+ACTN1,Smooth Muscle
+ADAM33,Smooth Muscle
+ADCY5,Smooth Muscle
+AKAP12,Smooth Muscle
+AMIGO2,Smooth Muscle
+AMOTL1,Smooth Muscle
+ARGLU1,Smooth Muscle
+ARHGEF25,Smooth Muscle
+ATN1,Smooth Muscle
+ATP2B4,Smooth Muscle
+BAG2,Smooth Muscle
+CACNA1C,Smooth Muscle
+CACNA1H,Smooth Muscle
+CCDC9B,Smooth Muscle
+CCNL2,Smooth Muscle
+CFLAR,Smooth Muscle
+CLIP1,Smooth Muscle
+CNN1,Smooth Muscle
+CPED1,Smooth Muscle
+CSPG4,Smooth Muscle
+DDX5,Smooth Muscle
+DES,Smooth Muscle
+DMPK,Smooth Muscle
+DMWD,Smooth Muscle
+DPP6,Smooth Muscle
+DSTN,Smooth Muscle
+DTNA,Smooth Muscle
+ECHDC2,Smooth Muscle
+EHBP1L1,Smooth Muscle
+ENAH,Smooth Muscle
+EPHA7,Smooth Muscle
+FBXO32,Smooth Muscle
+FERMT2,Smooth Muscle
+FGFR2,Smooth Muscle
+FHL1,Smooth Muscle
+FLNA,Smooth Muscle
+FLNC,Smooth Muscle
+FNBP1,Smooth Muscle
+FOSB,Smooth Muscle
+FOXP2,Smooth Muscle
+FXYD6,Smooth Muscle
+GEM,Smooth Muscle
+GJC1,Smooth Muscle
+GNAO1,Smooth Muscle
+HDAC4,Smooth Muscle
+HIF3A,Smooth Muscle
+HMCN2,Smooth Muscle
+HOXB3,Smooth Muscle
+HSPB6,Smooth Muscle
+HSPB8,Smooth Muscle
+IGSF9B,Smooth Muscle
+INTS11,Smooth Muscle
+ITGA1,Smooth Muscle
+ITGA7,Smooth Muscle
+ITGB3,Smooth Muscle
+ITIH5,Smooth Muscle
+ITPKB,Smooth Muscle
+KANK2,Smooth Muscle
+KCNMA1,Smooth Muscle
+KCNMB1,Smooth Muscle
+KIZ,Smooth Muscle
+LDB1,Smooth Muscle
+LDB3,Smooth Muscle
+LMO3,Smooth Muscle
+LMOD1,Smooth Muscle
+LPP,Smooth Muscle
+LRIG1,Smooth Muscle
+MACF1,Smooth Muscle
+MAMDC2,Smooth Muscle
+MEIS2,Smooth Muscle
+MICAL3,Smooth Muscle
+MRGPRF,Smooth Muscle
+MRVI1,Smooth Muscle
+MSRB3,Smooth Muscle
+MTSS2,Smooth Muscle
+MYEF2,Smooth Muscle
+MYH11,Smooth Muscle
+MYL6,Smooth Muscle
+MYLK,Smooth Muscle
+MYOF,Smooth Muscle
+NEXN,Smooth Muscle
+NFATC4,Smooth Muscle
+NPTN,Smooth Muscle
+NRP2,Smooth Muscle
+NT5DC3,Smooth Muscle
+PALLD,Smooth Muscle
+PARVA,Smooth Muscle
+PCDH7,Smooth Muscle
+PDE3B,Smooth Muscle
+PDE4D,Smooth Muscle
+PDE5A,Smooth Muscle
+PDLIM3,Smooth Muscle
+PDLIM7,Smooth Muscle
+PDZRN3,Smooth Muscle
+PER1,Smooth Muscle
+PGM5,Smooth Muscle
+PHLDB2,Smooth Muscle
+PKD1,Smooth Muscle
+PLIN4,Smooth Muscle
+PNCK,Smooth Muscle
+PNISR,Smooth Muscle
+PPP1R12A,Smooth Muscle
+PPP1R12B,Smooth Muscle
+PPP1R12C,Smooth Muscle
+PPP1R14A,Smooth Muscle
+PRKG1,Smooth Muscle
+PRUNE2,Smooth Muscle
+PSD,Smooth Muscle
+RAMP1,Smooth Muscle
+RBPMS,Smooth Muscle
+RBPMS2,Smooth Muscle
+SETBP1,Smooth Muscle
+SLMAP,Smooth Muscle
+SMTN,Smooth Muscle
+SPEG,Smooth Muscle
+STARD9,Smooth Muscle
+STK38L,Smooth Muscle
+STON1,Smooth Muscle
+SVIL,Smooth Muscle
+SYDE2,Smooth Muscle
+SYNPO2,Smooth Muscle
+TACC2,Smooth Muscle
+TACR2,Smooth Muscle
+TBC1D1,Smooth Muscle
+TGFB1I1,Smooth Muscle
+TNC,Smooth Muscle
+TNS1,Smooth Muscle
+TPM1,Smooth Muscle
+VCL,Smooth Muscle
+WLS,Smooth Muscle
+ZBTB16,Smooth Muscle
+ZFP36,Smooth Muscle
+ZYX,Smooth Muscle
+AAK1,T cells
+ACAP1,T cells
+ADGRE5,T cells
+AKNA,T cells
+ALOX5AP,T cells
+ANKRD44,T cells
+APBB1IP,T cells
+ARHGAP15,T cells
+ARHGAP30,T cells
+ARHGAP45,T cells
+ARHGAP9,T cells
+ARHGEF1,T cells
+BCL11B,T cells
+BTG1,T cells
+CCDC88B,T cells
+CCDC88C,T cells
+CCL5,T cells
+CCR4,T cells
+CCR5,T cells
+CD2,T cells
+CD247,T cells
+CD28,T cells
+CD3D,T cells
+CD3E,T cells
+CD3G,T cells
+CD44,T cells
+CD48,T cells
+CD5,T cells
+CD52,T cells
+CD6,T cells
+CD69,T cells
+CD7,T cells
+CD8A,T cells
+CD96,T cells
+CDC42SE1,T cells
+CDC42SE2,T cells
+CELF2,T cells
+CKLF,T cells
+CLEC2D,T cells
+CNOT6L,T cells
+CORO1A,T cells
+CST7,T cells
+CTSW,T cells
+CXCR6,T cells
+DDIT4,T cells
+DEF6,T cells
+DENND1C,T cells
+DENND2D,T cells
+DGKA,T cells
+DOCK10,T cells
+EIF4E3,T cells
+EML4,T cells
+EVL,T cells
+FCMR,T cells
+FGD3,T cells
+FMNL1,T cells
+FXYD5,T cells
+FYB1,T cells
+FYN,T cells
+GBP5,T cells
+GIMAP2,T cells
+GIMAP5,T cells
+GPR171,T cells
+GPR183,T cells
+GPRIN3,T cells
+GPSM3,T cells
+GRAP2,T cells
+GZMA,T cells
+GZMK,T cells
+IL2RB,T cells
+IL7R,T cells
+ITGAL,T cells
+ITK,T cells
+ITM2A,T cells
+JAK3,T cells
+KCNAB2,T cells
+KLRB1,T cells
+KLRG1,T cells
+KLRK1,T cells
+LAT,T cells
+LCK,T cells
+LEPROTL1,T cells
+LIMD2,T cells
+LTB,T cells
+MBNL1,T cells
+MGAT4A,T cells
+MYO1G,T cells
+NFATC2,T cells
+NKG7,T cells
+NLRC3,T cells
+NLRC5,T cells
+NLRP1,T cells
+OGA,T cells
+OXNAD1,T cells
+P2RY10,T cells
+PARP8,T cells
+PBXIP1,T cells
+PDE7A,T cells
+PGGHG,T cells
+PIK3CD,T cells
+PIK3IP1,T cells
+PITPNC1,T cells
+PLAAT4,T cells
+PRF1,T cells
+PRKCH,T cells
+PSTPIP1,T cells
+PTPN22,T cells
+PTPN7,T cells
+PTPRC,T cells
+PYHIN1,T cells
+RASAL3,T cells
+RASGRP1,T cells
+RBL2,T cells
+RESF1,T cells
+RNF19A,T cells
+RNF213,T cells
+RORA,T cells
+SASH3,T cells
+SELPLG,T cells
+SEPTIN1,T cells
+SEPTIN9,T cells
+SH2D1A,T cells
+SKAP1,T cells
+SLAMF1,T cells
+SLAMF6,T cells
+SLFN5,T cells
+SPN,T cells
+SPOCK2,T cells
+STAT4,T cells
+STK10,T cells
+STK17A,T cells
+STK4,T cells
+SUN2,T cells
+SYNE2,T cells
+SYNRG,T cells
+SYTL3,T cells
+TAP1,T cells
+TAPBP,T cells
+TBC1D10C,T cells
+TC2N,T cells
+TCF7,T cells
+THEMIS,T cells
+TIGIT,T cells
+TMC6,T cells
+TMC8,T cells
+TNFAIP3,T cells
+TRAC,T cells
+TRAF1,T cells
+TRAF3IP3,T cells
+TRAT1,T cells
+TRBC1,T cells
+TRBC2,T cells
+TRIM22,T cells
+TTC39C,T cells
+WNK1,T cells
+ZAP70,T cells
+ZC3HAV1,T cells
+ZFP36L2,T cells
+ADGRG1,Tumor
+ADRM1,Tumor
+AHCY,Tumor
+ANXA4,Tumor
+APCDD1,Tumor
+ASCL2,Tumor
+ASS1,Tumor
+ATP5F1E,Tumor
+ATP9A,Tumor
+AXIN2,Tumor
+CASK,Tumor
+CBX3,Tumor
+CCT6A,Tumor
+CD46,Tumor
+CDK4,Tumor
+CEACAM6,Tumor
+CERS6,Tumor
+CFL1,Tumor
+CFTR,Tumor
+CHCHD2,Tumor
+CLDN1,Tumor
+CTSA,Tumor
+CYB5B,Tumor
+CYC1,Tumor
+DACH1,Tumor
+DKC1,Tumor
+DPEP1,Tumor
+DYNLRB1,Tumor
+EEF1B2,Tumor
+EEF1G,Tumor
+EEF2,Tumor
+EIF3B,Tumor
+EIF6,Tumor
+ENTPD6,Tumor
+EPHB2,Tumor
+EPHB3,Tumor
+EPPK1,Tumor
+EREG,Tumor
+ERGIC3,Tumor
+ETS2,Tumor
+FAM83H,Tumor
+FERMT1,Tumor
+GGH,Tumor
+GNG4,Tumor
+GOLIM4,Tumor
+GPRC5A,Tumor
+GPX2,Tumor
+GSTP1,Tumor
+H1F0,Tumor
+H3F3A,Tumor
+HIST1H1B,Tumor
+HIST1H1C,Tumor
+HNF4A,Tumor
+HSP90AA1,Tumor
+HSP90AB1,Tumor
+HSPA1B,Tumor
+HSPA8,Tumor
+HSPD1,Tumor
+HSPE1,Tumor
+KIF5B,Tumor
+KRT23,Tumor
+LAPTM4B,Tumor
+LGR5,Tumor
+MARCKSL1,Tumor
+MCM7,Tumor
+MIF,Tumor
+MPST,Tumor
+MYC,Tumor
+NDUFA4,Tumor
+NDUFB9,Tumor
+NELFCD,Tumor
+NHP2,Tumor
+NME2,Tumor
+NOP16,Tumor
+NQO1,Tumor
+PCBD1,Tumor
+PDHA1,Tumor
+PDZD8,Tumor
+PERP,Tumor
+PGRMC1,Tumor
+PLCB4,Tumor
+PLPP2,Tumor
+POF1B,Tumor
+POLR1D,Tumor
+PPDPF,Tumor
+PRAP1,Tumor
+PRDX2,Tumor
+PRDX5,Tumor
+PRELID3B,Tumor
+PRKDC,Tumor
+PSMA7,Tumor
+PSMF1,Tumor
+PTBP3,Tumor
+PTP4A3,Tumor
+PYGB,Tumor
+RACK1,Tumor
+RCN1,Tumor
+RGMB,Tumor
+RNF43,Tumor
+S100A11,Tumor
+S100P,Tumor
+SAP18,Tumor
+SCD,Tumor
+SDC4,Tumor
+SERINC3,Tumor
+SET,Tumor
+SLC12A2,Tumor
+SMS,Tumor
+SNRPB,Tumor
+SNRPB2,Tumor
+SOX4,Tumor
+SRPK1,Tumor
+STAU1,Tumor
+STX3,Tumor
+SYAP1,Tumor
+SYNGR2,Tumor
+TFRC,Tumor
+THOC7,Tumor
+TMEM106C,Tumor
+TMEM238,Tumor
+TSPAN6,Tumor
+TUBA1C,Tumor
+UBA52,Tumor
+UXT,Tumor
+VAV3,Tumor
+XRN2,Tumor
+YBX1,Tumor
+YWHAZ,Tumor
+ZNF703,Tumor

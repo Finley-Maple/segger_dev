@@ -5,6 +5,11 @@ Utility functions for spatial batch combination from downstream tasks.
 
 import sys
 from pathlib import Path
+import scanpy as sc
+import anndata as ad
+from typing import Dict, Optional, List, Tuple
+import os
+from itertools import combinations
 
 # Ensure project and src paths are available for imports (src/ layout)
 project_root_path = Path(__file__).resolve().parents[2]
@@ -26,6 +31,11 @@ from segger.models.segger_model import Segger
 from segger.training.train import LitSegger
 from typing import Dict, Optional, List
 from dataclasses import dataclass
+try:
+    # Optional: load environment variables from .env if available
+    from dotenv import load_dotenv  # type: ignore
+except Exception:
+    load_dotenv = None
 
 DATA_DIR = Path('/dkfz/cluster/gpu/data/OE0606/fengyun')
 
@@ -189,7 +199,7 @@ def load_metadata_cache(cache_path: Path) -> tuple:
     )
 
 
-def load_metadata(config: VisualizationConfig, load_scrna_gene_types: bool = True, force_reload: bool = False):
+def load_metadata(config: VisualizationConfig, load_scrna_gene_types: bool = True, force_reload: bool = True):
     """Load transcripts and metadata based on configuration with caching support.
     
     Args:
@@ -248,15 +258,15 @@ def load_metadata(config: VisualizationConfig, load_scrna_gene_types: bool = Tru
         scrnaseq_file = DATA_DIR / 'xenium_data' / f'xenium_{config.dataset}' / 'scRNAseq.h5ad'
         if scrnaseq_file.exists():
             try:
-                from utils.simple_gene_celltype_mapping import create_gene_celltype_dict_simple
+                from utils.simple_gene_celltype_mapping import create_gene_celltype_dict
                 print(f"Loading gene-to-cell-type mapping from scRNAseq: {scrnaseq_file}")
                 if config.dataset == 'colon':
-                    gene_types_dict = create_gene_celltype_dict_simple(
+                    gene_types_dict = create_gene_celltype_dict(
                         str(scrnaseq_file), 
                         celltype_column="Level1"
                     )
                 elif config.dataset == 'breast':
-                    gene_types_dict = create_gene_celltype_dict_simple(
+                    gene_types_dict = create_gene_celltype_dict(
                         str(scrnaseq_file), 
                         celltype_column="celltype_major"
                     )
@@ -412,3 +422,112 @@ def create_combined_dataloader(dm, batch_indices: Dict[str, List[int]]) -> List:
     
     print(f"Created combined dataloader with {len(combined_batches)} total batches")
     return combined_batches
+
+
+def setup_wandb_key():
+    """Configure Weights & Biases using the WANDB_API_KEY from environment.
+
+    Expects the API key to be provided via the environment variable
+    WANDB_API_KEY (e.g., export WANDB_API_KEY=... or set in a .env file).
+    """
+    try:
+        import wandb
+        # Load .env if present (current working dir and project root)
+        if load_dotenv is not None:
+            try:
+                # Load from CWD first
+                load_dotenv()
+                # Also try the repository/project root
+                load_dotenv(dotenv_path=project_root_path / ".env")
+            except Exception:
+                pass
+
+        wandb_api_key = os.getenv("WANDB_API_KEY")
+        if not wandb_api_key:
+            print("⚠️  WANDB_API_KEY not set. Skipping wandb login; falling back to CSV logging.")
+            return False
+
+        wandb.login(key=wandb_api_key)
+        print("✓ Wandb configured successfully via environment variable")
+        return True
+
+    except ImportError:
+        print("❌ Wandb not installed. Please install with: pip install wandb")
+        return False
+    except Exception as e:
+        print(f"❌ Error setting up wandb: {e}")
+        return False
+
+def find_mutually_exclusive_genes(
+    adata: ad.AnnData, markers: Dict[str, Dict[str, List[str]]], cell_type_column: str
+) -> List[Tuple[str, str]]:
+    """Patched version of find_mutually_exclusive_genes that fixes boolean indexing issues.
+    
+    Args:
+    - adata: AnnData
+        Annotated data object containing gene expression data.
+    - markers: dict
+        Dictionary where keys are cell types and values are dictionaries containing:
+            'positive': list of top x% highly expressed genes
+            'negative': list of top x% lowly expressed genes.
+    - cell_type_column: str
+        Column name in `adata.obs` that specifies cell types.
+
+    Returns:
+    - exclusive_pairs: list
+        List of mutually exclusive gene pairs.
+    """
+    exclusive_genes = {}
+    all_exclusive = []
+    
+    for cell_type, marker_sets in markers.items():
+        positive_markers = marker_sets["positive"]
+        exclusive_genes[cell_type] = []
+        
+        for gene in positive_markers:
+            if gene not in adata.var_names:
+                continue
+                
+            gene_expr = adata[:, gene].X
+            
+            # Convert to dense array if sparse to avoid indexing issues
+            if hasattr(gene_expr, 'toarray'):
+                gene_expr = gene_expr.toarray().flatten()
+            else:
+                gene_expr = gene_expr.flatten()
+            
+            # Create boolean masks as numpy arrays
+            cell_type_mask = (adata.obs[cell_type_column] == cell_type).values
+            non_cell_type_mask = ~cell_type_mask
+            
+            # Calculate expression fractions
+            cell_type_expr_frac = (gene_expr[cell_type_mask] > 0).mean()
+            non_cell_type_expr_frac = (gene_expr[non_cell_type_mask] > 0).mean()
+            
+            if cell_type_expr_frac > 0.2 and non_cell_type_expr_frac < 0.05:
+                exclusive_genes[cell_type].append(gene)
+                all_exclusive.append(gene)
+    
+    unique_genes = list(
+        {
+            gene
+            for i in exclusive_genes.keys()
+            for gene in exclusive_genes[i]
+            if gene in all_exclusive
+        }
+    )
+    
+    filtered_exclusive_genes = {
+        i: [gene for gene in exclusive_genes[i] if gene in unique_genes]
+        for i in exclusive_genes.keys()
+    }
+    
+    mutually_exclusive_gene_pairs = [
+        tuple(sorted((gene1, gene2)))
+        for key1, key2 in combinations(filtered_exclusive_genes.keys(), 2)
+        if key1 != key2
+        for gene1 in filtered_exclusive_genes[key1]
+        for gene2 in filtered_exclusive_genes[key2]
+    ]
+    
+    return set(mutually_exclusive_gene_pairs)

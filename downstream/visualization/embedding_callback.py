@@ -114,6 +114,7 @@ class EmbeddingVisualizationCallback(Callback):
                  save_plots: bool = True,
                  log_to_wandb: bool = True,
                  save_embeddings: bool = False,
+                 spatial_region: Optional[List[int]] = None,
                  gene_types_dict: Optional[Dict] = None,
                  cell_types_dict: Optional[Dict] = None,
                  config: Optional[EmbeddingVisualizationConfig] = None,
@@ -133,6 +134,7 @@ class EmbeddingVisualizationCallback(Callback):
             save_plots: Whether to save plots to disk
             log_to_wandb: Whether to log embeddings to Weights & Biases
             save_embeddings: Whether to save raw embeddings to disk
+            spatial_region: List of spatial regions to visualize
             gene_types_dict: Mapping from gene name to gene type
             cell_types_dict: Mapping from cell ID to cell type
             config: Visualization configuration
@@ -151,6 +153,7 @@ class EmbeddingVisualizationCallback(Callback):
         self.save_plots = save_plots
         self.log_to_wandb = log_to_wandb
         self.save_embeddings = save_embeddings
+        self.spatial_region = spatial_region
         self.gene_types_dict = gene_types_dict
         self.cell_types_dict = cell_types_dict
         self.config = config or EmbeddingVisualizationConfig()

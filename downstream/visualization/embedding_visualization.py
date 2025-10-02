@@ -145,12 +145,6 @@ class EmbeddingExtractor:
                     # print("edge_index", edge_index)
                     # print("batch", batch)
                     return {}
-                if edge_index.shape[0] != 2:
-                    print(f"Warning: Skipping batch due to invalid edge_index shape for {edge_type}: "
-                          f"expected shape [2, num_edges], got {edge_index.shape}")
-                    print("edge_index", edge_index)
-                    print("batch", batch)
-                    return {}
             
             # Forward pass to get final embeddings
             try:
@@ -794,10 +788,7 @@ class EmbeddingVisualizer:
                            save_dir: Path,
                            title_prefix: str = "",
                            gene_types_dict: Optional[Dict] = None,
-                           create_interactive_plots: bool = True,
-                           create_gene_level_plot: bool = True,
-                           gene_min_transcript_count: int = 1,
-                           exclude_unknown: bool = True) -> Dict[str, str]:
+                           create_interactive_plots: bool = True) -> Dict[str, str]:
         """
         Create visualization plots for node embeddings.
         
@@ -807,9 +798,6 @@ class EmbeddingVisualizer:
             title_prefix: Prefix for plot titles
             gene_types_dict: Mapping from gene name to gene type
             create_interactive_plots: Whether to create interactive Plotly dashboards
-            create_gene_level_plot: Whether to create gene-level aggregated plot
-            gene_min_transcript_count: Minimum transcript count for genes to include in gene-level plots
-            exclude_unknown: Whether to exclude unknown genes from gene-level plots
             
         Returns:
             Dictionary mapping plot names to file paths
@@ -832,71 +820,6 @@ class EmbeddingVisualizer:
 
         save_dir.mkdir(parents=True, exist_ok=True)
         saved_plots = {}
-        
-        # Check transcript count before processing
-        if 'tx' in embeddings_data:
-            tx_count = len(embeddings_data['tx']['metadata'])
-            max_points_interactive = getattr(self.config, 'max_points_interactive', 100000)
-            if tx_count > max_points_interactive:
-                raise ValueError(f"Number of transcripts ({tx_count:,}) exceeds max_points_interactive limit ({max_points_interactive:,}). "
-                               f"Please use spatial filtering to reduce the number of transcripts or increase max_points_interactive.")
-        
-        for node_type, data in embeddings_data.items():
-            metadata = data['metadata']
-            
-            print(f"Visualizing {node_type} embeddings ({len(metadata):,} nodes)...")
-            
-            # Add gene types if available for tx nodes
-            if node_type == 'tx' and gene_types_dict and 'gene_name' in metadata.columns:
-                metadata['gene_type'] = metadata['gene_name'].map(gene_types_dict)
-                
-                # Fill NA values based on gene name
-                is_negative_control = metadata['gene_name'].str.contains('BLANK|Neg', case=False, na=False)
-                # calculate the number of negative controls
-                negative_control_count = is_negative_control.sum()
-                print(f"Number of negative controls: {negative_control_count}")
-                metadata['gene_type'] = np.where(
-                    metadata['gene_type'].isna() & ~is_negative_control,
-                    'Unknown',
-                    metadata['gene_type']  # Keep original (including NaN for negative controls)
-                )
-                # calculate the number of unknown gene types
-                unknown_gene_type_count = metadata['gene_type'].str.contains('Unknown').sum()
-                print(f"Number of unknown gene types: {unknown_gene_type_count}")
-        
-        # Create gene-level plots if requested and tx data is available
-        gene_embeddings_for_interactive = None  # Cache for interactive plots
-        gene_metadata_for_interactive = None
-        
-        if create_gene_level_plot and 'tx' in embeddings_data:
-            tx_data = embeddings_data['tx']
-            tx_embeddings = tx_data['embeddings']
-            tx_metadata = tx_data['metadata']
-            
-            # Only create gene-level plots if we have gene information and non-dummy embeddings
-            if ('gene_name' in tx_metadata.columns and 
-                'gene_type' in tx_metadata.columns and 
-                tx_embeddings.sum() != 0):  # Check if embeddings are not all zeros (dummy)
-                
-                print("Creating gene-level aggregated plots...")
-                
-                # Aggregate transcript embeddings by gene (cache for reuse)
-                gene_embeddings_for_interactive, gene_metadata_for_interactive = self._aggregate_embeddings_by_gene(
-                    tx_embeddings, tx_metadata
-                )
-                
-                # Create gene-level plots
-                gene_plots = self._create_gene_level_plots(
-                    gene_embeddings=gene_embeddings_for_interactive,
-                    gene_metadata=gene_metadata_for_interactive,
-                    save_dir=save_dir,
-                    title_prefix=title_prefix,
-                    min_transcript_count=gene_min_transcript_count,
-                    exclude_unknown=exclude_unknown
-                )
-                saved_plots.update(gene_plots)
-            else:
-                print("Skipping gene-level plots: missing gene information or dummy embeddings")
         
         # Create interactive dashboard if tx data is available and requested
         if create_interactive_plots and 'tx' in embeddings_data:
@@ -999,7 +922,7 @@ class EmbeddingVisualizer:
         
         # Filter by excluding unknown genes if requested
         if exclude_unknown:
-            unknown_mask = ~gene_metadata['gene_type'].str.contains('tx_|Unknown', case=False, na=False)
+            unknown_mask = ~gene_metadata['gene_type'].str.contains('Unknown', case=False, na=False)
         else:
             unknown_mask = pd.Series([True] * len(gene_metadata), index=gene_metadata.index)
         
@@ -1012,17 +935,18 @@ class EmbeddingVisualizer:
         
         # Apply filtering
         filtered_gene_metadata = gene_metadata[final_mask].reset_index(drop=True)
-        filtered_gene_embeddings = gene_embeddings[final_mask]
         
         print(f"Filtered gene count: {len(filtered_gene_metadata)} "
               f"(min_transcript_count={min_transcript_count}, exclude_unknown={exclude_unknown})")
         
-        # Apply dimensionality reduction to filtered gene embeddings with reference coordinates
+        # Apply dimensionality reduction to the whole gene embeddings with reference coordinates and then filter the embeddings
         reduced_embeddings = self._apply_dimensionality_reduction(
-            filtered_gene_embeddings, 
+            gene_embeddings, 
             node_type='gene',
             fit_reducer=False  # Use existing reducer if available for consistency
         )
+        
+        reduced_embeddings = reduced_embeddings[final_mask]
         
         # Create plot colored by gene type with gene name labels
         fig, ax = plt.subplots(figsize=self.config.figsize)
@@ -1079,10 +1003,7 @@ class EmbeddingVisualizer:
                 texts.append(text)
         
         # Adjust text positions to avoid overlap
-        try:
-            adjust_text(texts, ax=ax, arrowprops=dict(arrowstyle='-', color='gray', alpha=0.5, lw=0.5))
-        except ImportError:
-            print("Warning: adjustText not available. Gene labels may overlap. Install with: pip install adjustText")
+        adjust_text(texts, ax=ax, arrowprops=dict(arrowstyle='-', color='gray', alpha=0.5, lw=0.5))
         
         ax.set_xlabel(f'{self.config.method.upper()} 1')
         ax.set_ylabel(f'{self.config.method.upper()} 2')
@@ -1896,182 +1817,6 @@ class EmbeddingVisualizer:
         print(f"Dashboard contains {len(metadata):,} transcripts after filtering and subsampling")
         return str(plot_path)
     
-    
-    def _subsample_spatial_data_by_gene_type(self, 
-                                           spatial_data: Dict[str, Dict],
-                                           gene_types_dict: Optional[Dict] = None) -> Dict[str, Dict]:
-        """
-        Subsample spatial data for transcript nodes by gene type.
-        
-        Args:
-            spatial_data: Dictionary containing spatial coordinates and metadata
-            gene_types_dict: Mapping from gene name to gene type
-            
-        Returns:
-            Subsampled spatial data
-        """
-        result = {}
-        
-        for node_type, data in spatial_data.items():
-            # Only process tx nodes
-            if node_type != 'tx':
-                continue
-                
-            positions = data['positions']
-            metadata = data['metadata']
-            
-            if gene_types_dict and 'gene_name' in metadata.columns:
-                # Add gene type information
-                metadata['gene_type'] = metadata['gene_name'].map(gene_types_dict)
-                
-                # Subsample by gene type
-                sampled_indices = []
-                for gene_type in metadata['gene_type'].dropna().unique():
-                    gene_type_mask = metadata['gene_type'] == gene_type
-                    gene_type_indices = metadata[gene_type_mask].index
-                    n_sample = min(len(gene_type_indices), self.config.spatial_max_points_per_gene_type)
-                    sampled_indices.extend(np.random.choice(gene_type_indices, n_sample, replace=False))
-                
-                # Include transcripts without gene type information (up to limit)
-                no_gene_type_mask = metadata['gene_type'].isna()
-                if no_gene_type_mask.any():
-                    no_gene_type_indices = metadata[no_gene_type_mask].index
-                    n_sample = min(len(no_gene_type_indices), self.config.spatial_max_points_per_gene_type)
-                    sampled_indices.extend(np.random.choice(no_gene_type_indices, n_sample, replace=False))
-                
-                sampled_indices = np.array(sampled_indices)
-                
-                result[node_type] = {
-                    'positions': positions[sampled_indices],
-                    'metadata': metadata.iloc[sampled_indices].copy().reset_index(drop=True)
-                }
-            else:
-                # No subsampling when gene_types_dict is not provided
-                result[node_type] = data
-                
-        return result
-    
-    def visualize_spatial_all_batches(self,
-                                    spatial_data: Dict[str, Dict],
-                                    save_dir: Path,
-                                    gene_types_dict: Optional[Dict] = None,
-                                    max_batches_to_plot: Optional[int] = None) -> Dict[str, str]:
-        """
-        Create spatial visualization plots with all batches combined, colored by batch index.
-        Creates plots for tx nodes only.
-        
-        Args:
-            spatial_data: Dictionary containing spatial coordinates and metadata
-            save_dir: Directory to save plots
-            gene_types_dict: Mapping from gene name to gene type (used for subsampling only)
-            max_batches_to_plot: Maximum number of batches to include
-            
-        Returns:
-            Dictionary mapping plot names to file paths
-        """
-        save_dir.mkdir(parents=True, exist_ok=True)
-        saved_plots = {}
-        
-        # Subsample data if gene types are provided
-        if gene_types_dict:
-            spatial_data = self._subsample_spatial_data_by_gene_type(spatial_data, gene_types_dict)
-        
-        # Get all unique batch indices
-        all_batch_indices = set()
-        for node_type, data in spatial_data.items():
-            all_batch_indices.update(data['metadata']['batch_idx'].unique())
-        
-        all_batch_indices = sorted(all_batch_indices)
-        
-        if max_batches_to_plot and len(all_batch_indices) > max_batches_to_plot:
-            # Randomly select batches instead of taking the first N
-            original_count = len(all_batch_indices)
-            selected_batch_indices = np.random.choice(all_batch_indices, max_batches_to_plot, replace=False)
-            all_batch_indices = sorted(selected_batch_indices)
-            print(f"Randomly selected {max_batches_to_plot} batches from {original_count} available: {all_batch_indices}")
-        
-        print(f"Creating combined spatial plots for {len(all_batch_indices)} batches...")
-        
-        # Create colormap for batches - if more than 10 batches, group them into consecutive ranges
-        if len(all_batch_indices) > 10:
-            # Group batches into consecutive ranges of 10
-            batches_per_group = 10
-            n_groups = (len(all_batch_indices) + batches_per_group - 1) // batches_per_group  # Ceiling division
-            
-            batch_groups = {}
-            batch_ranges = {}
-            
-            for i, batch_idx in enumerate(all_batch_indices):
-                group_idx = i // batches_per_group  # Integer division for consecutive grouping
-                batch_groups[batch_idx] = group_idx
-                
-                # Track the range for each group
-                if group_idx not in batch_ranges:
-                    batch_ranges[group_idx] = []
-                batch_ranges[group_idx].append(batch_idx)
-            
-            # Use distinct colors for each group
-            group_colors = plt.cm.tab10(np.linspace(0, 1, min(n_groups, 10)))
-            batch_to_color = {batch_idx: group_colors[group_idx % 10] for batch_idx, group_idx in batch_groups.items()}
-            
-            print(f"  Grouping {len(all_batch_indices)} batches into {n_groups} consecutive groups of {batches_per_group}")
-            for group_idx, batch_list in batch_ranges.items():
-                print(f"    Group {group_idx}: Batches {min(batch_list)}-{max(batch_list)}")
-        else:
-            # Use individual colors for each batch
-            batch_colors = plt.cm.tab10(np.linspace(0, 1, len(all_batch_indices)))
-            batch_to_color = dict(zip(all_batch_indices, batch_colors))
-            print(f"  Using individual colors for {len(all_batch_indices)} batches")
-        
-        # Plot 1: All transcripts colored by batch
-        if 'tx' in spatial_data:
-            print("Creating transcript plot colored by batch...")
-            fig, ax = plt.subplots(figsize=self.config.figsize)
-            
-            tx_data = spatial_data['tx']
-            
-            for batch_idx in all_batch_indices:
-                batch_mask = tx_data['metadata']['batch_idx'] == batch_idx
-                if batch_mask.any():
-                    batch_positions = tx_data['positions'][batch_mask]
-                    
-                    # Create label based on grouping
-                    if len(all_batch_indices) > 10:
-                        group_idx = batch_groups[batch_idx]
-                        # Get the batch range for this group
-                        batches_in_group = batch_ranges[group_idx]
-                        # Only label the first batch in each group
-                        if batch_idx == batches_in_group[0]:
-                            if len(batches_in_group) == 1:
-                                label = f'Batch {batch_idx}'
-                            else:
-                                label = f'Batches {min(batches_in_group)}-{max(batches_in_group)}'
-                        else:
-                            label = None  # Don't repeat label for same color group
-                    else:
-                        label = f'Batch {batch_idx}'
-                    
-                    ax.scatter(batch_positions[:, 0], batch_positions[:, 1],
-                             c=[batch_to_color[batch_idx]], s=self.config.spatial_tx_size,
-                             alpha=self.config.spatial_alpha, label=label)
-            
-            ax.set_xlabel('X Coordinate (µm)')
-            ax.set_ylabel('Y Coordinate (µm)')
-            total_transcripts = len(tx_data['metadata'])
-            ax.set_title(f'All Transcripts - Colored by Batch Index ({total_transcripts:,} transcripts)')
-            ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=12, markerscale=6.0)
-            ax.grid(True, alpha=0.3)
-            
-            plt.tight_layout()
-            plot_path = save_dir / f'tx_all_batches.{self.config.save_format}'
-            plt.savefig(plot_path, dpi=self.config.dpi, bbox_inches='tight')
-            plt.close()
-            saved_plots['tx_all_batches'] = str(plot_path)
-        
-
-        
-        return saved_plots
-    
     def save_embeddings(self, 
                        embeddings_data: Dict[str, Dict], 
                        save_path: Path) -> None:
@@ -2191,8 +1936,7 @@ def visualize_embeddings_from_model(model: torch.nn.Module,
                                    max_batches: Optional[int] = None,
                                    config: EmbeddingVisualizationConfig = None,
                                    spatial_region: Optional[List[float]] = None,
-                                   create_interactive_plots: bool = True,
-                                   create_gene_level_plot: bool = True) -> Dict[str, str]:
+                                   create_interactive_plots: bool = True) -> Dict[str, str]:
     """
     Convenience function to extract and visualize embeddings from a trained model.
     
@@ -2207,7 +1951,6 @@ def visualize_embeddings_from_model(model: torch.nn.Module,
         config: Visualization configuration
         spatial_region: Optional list [x_min, x_max, y_min, y_max] to filter transcripts by spatial coordinates
         create_interactive_plots: Whether to create interactive Plotly dashboards
-        create_gene_level_plot: Whether to create gene-level aggregated plot
         
     Returns:
         Dictionary mapping plot names to file paths
@@ -2247,8 +1990,7 @@ def visualize_embeddings_from_model(model: torch.nn.Module,
         embeddings_data=embeddings_data,
         save_dir=save_dir,
         gene_types_dict=gene_types_dict,
-        create_interactive_plots=create_interactive_plots,
-        create_gene_level_plot=create_gene_level_plot
+        create_interactive_plots=create_interactive_plots
     )
     
     # Save embeddings
